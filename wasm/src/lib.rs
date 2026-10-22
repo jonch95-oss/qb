@@ -394,7 +394,8 @@ fn txn_lines(body: &[u8], keys: &HashSet<(u32, u32)>, out: &mut HashMap<(u32, u3
 /// SQL Anywhere NUMERIC: `[digit count][sign bit | exponent][base-100
 /// digits]`. The digits form an integer whose last pair is the
 /// 100^(exponent - 0x40) place (trailing zero pairs are dropped), so $60 is
-/// `01 40 3c` and $98.04 is `02 3f 62 04`. The high bit marks a negative.
+/// `01 40 3c`, $7,000 is `01 41 46`, $7,002 is `02 40 46 02` and $98.04 is
+/// `02 3f 62 04`. The high bit marks a negative.
 fn sa_decimal(b: &[u8]) -> Option<f64> {
     let (&count, rest) = b.split_first()?;
     let (&exp, digits) = rest.split_first()?;
@@ -841,5 +842,28 @@ mod bench {
         if let (Ok(v), Ok(out)) = (r, std::env::var("QBW_OUT")) {
             std::fs::write(out, serde_json::to_vec(&v).unwrap()).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod dump_plain {
+    use super::*;
+
+    /// QBW_BENCH=in.qbw QBW_OUT=plain.bin cargo test --release dump_plain -- --ignored
+    #[test]
+    #[ignore]
+    fn plain_bin() {
+        let store = PageStore::from_bytes(std::fs::read(std::env::var("QBW_BENCH").unwrap()).unwrap()).unwrap();
+        let mut out = vec![0u8; store.page_count() as usize * 4096];
+        for pn in 1..store.page_count() {
+            let page = store.page(pn).unwrap();
+            if page.trailer().page_type() != PageType::Extent {
+                continue;
+            }
+            if let Some(p) = decode_page(pn, page.bytes()) {
+                out[pn as usize * 4096..(pn as usize + 1) * 4096].copy_from_slice(&p);
+            }
+        }
+        std::fs::write(std::env::var("QBW_OUT").unwrap(), out).unwrap();
     }
 }

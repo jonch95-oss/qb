@@ -36,8 +36,10 @@ Everything is compiled to WebAssembly and embedded in the HTML page.
 
 ## Limitations
 
-- **Amounts are unverified.** The decimal format was worked out by trial and error. It reads gas and supply
-  purchases plausibly, but some amounts may be off (for example by a factor of 100). Check figures in QuickBooks.
+- Amounts are read exactly as stored (SQL Anywhere decimal: digit count, sign/exponent byte, base-100 digits with
+  trailing zero pairs dropped, e.g. $7,000 = `01 41 46`, $8,695 = `02 40 56 5f`). This was confirmed on three company
+  files, but some transactions are only partly readable.
+- QuickBooks keeps old copies of edited or reprinted checks, so a check can appear more than once.
 - Often only some of a transaction's lines are decoded (e.g. the expense side, not the bank side).
 - Transaction types are inferred; a few hundred show as "Other".
 - List labels ("Vendors", "Accounts"…) are inferred from the contents; pick another list if one looks off.
