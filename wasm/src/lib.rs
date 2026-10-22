@@ -137,6 +137,12 @@ pub struct ListEntry {
 }
 
 pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
+    analyze_bytes_with(bytes, false)
+}
+
+/// `deep`: also unlock the pages the cheap key checks miss, using OpenQBW's
+/// slow per-page fallback (`ApModel::deobfuscate_with_store`).
+pub fn analyze_bytes_with(bytes: Vec<u8>, deep: bool) -> Result<Value, String> {
     let file_size = bytes.len();
     let store = PageStore::from_bytes(bytes)
         .map_err(|e| format!("This does not look like a QuickBooks company file ({e})."))?;
@@ -146,6 +152,8 @@ pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
             .into());
     }
     let n = store.page_count() as usize;
+
+    let model = deep.then(|| opensqlany::ApModel::learn(&store));
 
     // Step 1: decode every data page once.
     let mut plain: Vec<Option<Vec<u8>>> = vec![None; n];
@@ -160,6 +168,9 @@ pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
         }
         if let Some(p) = decode_page(pn, page.bytes()) {
             plain[pn as usize] = Some(p);
+            decoded += 1;
+        } else if let Some(model) = &model {
+            plain[pn as usize] = Some(model.deobfuscate_with_store(page.bytes(), pn, &store));
             decoded += 1;
         }
     }
@@ -192,7 +203,7 @@ pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
     let mut seen = HashSet::new();
     headers.retain(|h| seen.insert(h.key));
     let keys: HashSet<(u32, u32)> = headers.iter().map(|h| h.key).collect();
-    let mut lines: HashMap<(u32, u32), Vec<(u32, Option<String>, Option<f64>)>> = HashMap::new();
+    let mut lines: HashMap<(u32, u32), Vec<TxnLine>> = HashMap::new();
     for p in plain.iter().flatten() {
         txn_lines(&p[..PAGE_BODY_END], &keys, &mut lines);
     }
@@ -214,12 +225,14 @@ pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
         "text": text,
         "txns": headers.iter().map(|h| {
             let mut ls = lines.remove(&h.key).unwrap_or_default();
-            ls.sort_by_key(|l| l.0);
-            ls.dedup_by_key(|l| l.0);
+            ls.sort_by_key(|l| (l.line_no, l.line_id));
+            ls.dedup_by_key(|l| l.line_id);
+            let main = ls.iter().find(|l| l.line_no == 0);
             json!({
                 "t": h.bitmap, "d": h.date_days, "c": h.created,
                 "n": h.names.iter().map(|(k, s)| json!([k, s])).collect::<Vec<_>>(),
-                "l": ls.iter().map(|(_, a, v)| json!([a, v])).collect::<Vec<_>>(),
+                "l": ls.iter().filter(|l| l.line_no > 0).map(|l| json!([l.account, l.amount])).collect::<Vec<_>>(),
+                "m": main.map(|l| json!([l.account, l.amount, l.ref_no])),
             })
         }).collect::<Vec<_>>(),
     }))
@@ -313,33 +326,53 @@ fn name_refs(row: &[u8]) -> Vec<(u8, String)> {
     out
 }
 
+/// One line of a transaction. Line 0 is the bank, card or register side
+/// and carries the transaction total and its reference (check) number;
+/// lines 1.. are the splits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TxnLine {
+    pub line_no: u32,
+    pub line_id: u32,
+    pub account: Option<String>,
+    pub amount: Option<f64>,
+    pub ref_no: Option<String>,
+}
+
 /// Find the lines of known transactions: `[key_a][key_b][line no][line id]`,
-/// then the account, the line's name reference and its amount. (The rate
-/// after the quantity is not used: it is stored at a different scale.)
-fn txn_lines(
-    body: &[u8],
-    keys: &HashSet<(u32, u32)>,
-    out: &mut HashMap<(u32, u32), Vec<(u32, Option<String>, Option<f64>)>>,
-) {
+/// then the account, (on line 0) the reference number, the line's name
+/// reference and its amount. (The rate after the quantity is not used: it
+/// is stored at a different scale.)
+fn txn_lines(body: &[u8], keys: &HashSet<(u32, u32)>, out: &mut HashMap<(u32, u32), Vec<TxnLine>>) {
     let mut j = 0;
     while j + 16 <= body.len() {
         let key = (u32_at(body, j), u32_at(body, j + 4));
         let line_no = u32_at(body, j + 8);
         let line_id = u32_at(body, j + 12);
-        if !(1..=500).contains(&line_no) || !(key.0 < line_id && line_id < key.0.saturating_add(5000)) || !keys.contains(&key) {
+        if line_no > 500 || !(key.0 < line_id && line_id < key.0.saturating_add(5000)) || !keys.contains(&key) {
             j += 1;
             continue;
         }
         let end = (j + 420).min(body.len());
         let row = &body[j + 16..end];
-        let account = row
-            .windows(3)
-            .take(32)
-            .position(|w| w == [0, 0, 0x80])
-            .and_then(|p| {
-                let len = *row.get(p + 3)? as usize;
-                (2..=64).contains(&len).then(|| clean(row.get(p + 4..p + 4 + len)?)).flatten()
-            });
+        let mut account = None;
+        let mut ref_no = None;
+        if let Some(p) = row.windows(3).take(32).position(|w| w == [0, 0, 0x80]) {
+            let len = row.get(p + 3).copied().unwrap_or(0) as usize;
+            if (2..=64).contains(&len) && p + 4 + len <= row.len() {
+                account = clean(&row[p + 4..p + 4 + len]);
+                // `[len][digits]` right after the account: the check or ref number.
+                let r = p + 4 + len;
+                if line_no == 0
+                    && let Some(&rlen) = row.get(r)
+                    && (1..=12).contains(&rlen)
+                    && let Some(digits) = row.get(r + 1..r + 1 + rlen as usize)
+                    && digits.iter().all(|b| b.is_ascii_alphanumeric() || b"-/#".contains(b))
+                    && digits.iter().any(|b| b.is_ascii_digit())
+                {
+                    ref_no = Some(String::from_utf8_lossy(digits).into_owned());
+                }
+            }
+        }
         let mut amount = None;
         let mut i = 0;
         while i + 5 <= row.len() {
@@ -353,7 +386,7 @@ fn txn_lines(
             i += 1;
         }
         let amount = amount.map(|v| (v * 100.0).round() / 100.0);
-        out.entry(key).or_default().push((line_id, account, amount));
+        out.entry(key).or_default().push(TxnLine { line_no, line_id, account, amount, ref_no });
         j += 16;
     }
 }
@@ -757,7 +790,10 @@ mod tests {
         let keys = HashSet::from([h.key]);
         let mut lines = HashMap::new();
         txn_lines(&page, &keys, &mut lines);
-        assert_eq!(lines[&h.key], vec![(7698, Some("Automobile Expense:Gas".into()), Some(-98.04))]);
+        assert_eq!(
+            lines[&h.key],
+            vec![TxnLine { line_no: 1, line_id: 7698, account: Some("Automobile Expense:Gas".into()), amount: Some(-98.04), ref_no: None }]
+        );
     }
 
     #[test]
@@ -799,7 +835,8 @@ mod bench {
     fn analyze_file() {
         let path = std::env::var("QBW_BENCH").expect("set QBW_BENCH");
         let t = Instant::now();
-        let r = analyze_bytes(std::fs::read(path).unwrap());
+        let deep = std::env::var("QBW_DEEP").is_ok();
+        let r = analyze_bytes_with(std::fs::read(path).unwrap(), deep);
         eprintln!("analyze {:?} ok={}", t.elapsed(), r.is_ok());
         if let (Ok(v), Ok(out)) = (r, std::env::var("QBW_OUT")) {
             std::fs::write(out, serde_json::to_vec(&v).unwrap()).unwrap();

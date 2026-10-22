@@ -193,7 +193,7 @@
             <select id="jType" aria-label="Type"></select>
             <select id="jRange" aria-label="Dates"></select>
             <input type="date" id="jFrom" aria-label="From"> <input type="date" id="jTo" aria-label="To">
-            <input type="search" id="jText" placeholder="Name, account…" aria-label="Search">
+            <input type="search" id="jText" placeholder="Name, account, check #…" aria-label="Search">
             <input type="number" id="jMin" placeholder="Min amount" step="0.01" style="width:110px" aria-label="Minimum amount">
             <span class="grow"></span>
             <span class="muted" id="jInfo"></span>
@@ -399,16 +399,24 @@ function build() {
   // ("Automobile Expenseable") with nonsense amounts; trust an account name
   // only when it recurs, and drop such lines' amounts.
   const acctUses = new Map();
-  for (const t of data.txns || []) for (const [a] of t.l) if (a) acctUses.set(a, (acctUses.get(a) || 0) + 1);
+  for (const t of data.txns || []) {
+    for (const [a] of t.l) if (a) acctUses.set(a, (acctUses.get(a) || 0) + 1);
+    if (t.m && t.m[0]) acctUses.set(t.m[0], (acctUses.get(t.m[0]) || 0) + 1);
+  }
   const goodName = (n) => n && !/^0{4}/.test(n);
   txns = (data.txns || []).map((t, i) => {
     t = { ...t, n: t.n.filter((x) => goodName(x[1])) };
     const first = t.n[0];
     const lines = t.l.filter(([a]) => a && (acctUses.get(a) || 0) >= 3 && goodName(a)).map(([a, v]) => ({ a, v }));
     const vals = lines.filter((l) => l.v != null).map((l) => l.v);
+    // Line 0 is the bank/card side: it holds the total (opposite sign to the
+    // splits) and the check or reference number.
+    const m = t.m || [null, null, null];
+    const main = { a: m[0] && (acctUses.get(m[0]) || 0) >= 3 && goodName(m[0]) ? m[0] : "", v: m[1], ref: m[2] || "" };
+    const amount = main.v != null && Math.abs(main.v) < 1e6 ? -main.v : vals.length ? vals.reduce((s, v) => s + v, 0) : null;
     const x = { i, t: t.t, d: t.d, date: iso(t.d), c: t.c, name: first ? first[1] : "", kind: first ? first[0] : null,
-      others: [...new Set(t.n.map((n) => n[1]))], l: t.l, lines,
-      amount: vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) * 100) / 100 : null };
+      others: [...new Set(t.n.map((n) => n[1]))], l: t.l, lines, main, num: main.ref,
+      amount: amount == null ? null : Math.round(amount * 100) / 100 };
     x.type = txnType(x);
     x.accts = [...new Set(lines.map((l) => l.a).filter(Boolean))];
     return x;
@@ -419,6 +427,7 @@ function build() {
       r.txns.push(t);
     }
     for (const l of t.lines) if (l.a) acct(l.a).rows.push({ t, v: l.v });
+    if (t.main.a) acct(t.main.a).rows.push({ t, v: t.main.v });
   }
   for (const r of names.values()) {
     if (!r.kinds.size) r.kinds.add("others");
@@ -493,6 +502,7 @@ function renderHome() {
 const COLS = {
   date: ["Date", (t) => fmtDate.format(dayToDate(t.d))],
   type: ["Type", (t) => esc(t.type)],
+  num: ["Num", (t) => esc(t.num)],
   name: ["Name", (t) => esc(t.name) || '<span class="muted">—</span>'],
   account: ["Account", (t) => esc(t.accts.length > 1 ? "-SPLIT-" : t.accts[0] || "")],
   amount: ["Amount", (t) => money(t.amount), true],
@@ -511,6 +521,8 @@ function showTxn(t) {
     <dl class="kv" style="margin:14px 0">
       <dt>Date</dt><dd>${fmtDate.format(dayToDate(t.d))}</dd>
       <dt>Amount</dt><dd>${money(t.amount)}</dd>
+      ${t.num ? `<dt>Num</dt><dd>${esc(t.num)}</dd>` : ""}
+      ${t.main.a ? `<dt>${t.amount < 0 ? "Paid from" : "Account"}</dt><dd><a data-acct="${esc(t.main.a)}">${esc(t.main.a)}</a></dd>` : ""}
       ${t.others.length ? `<dt>Names</dt><dd>${t.others.map((n) => `<a data-name="${esc(n)}">${esc(n)}</a>`).join(", ")}</dd>` : ""}
       ${added(t.c) ? `<dt>Entered</dt><dd>${added(t.c).toLocaleString()}</dd>` : ""}
     </dl>
@@ -574,15 +586,15 @@ function renderCenterDetail() {
   const draw = () => {
     const ty = $("cdType").value, yr = $("cdYear").value;
     const rows = r.txns.filter((t) => (!ty || t.type === ty) && (!yr || t.date.startsWith(yr)));
-    $("cdTable").innerHTML = txnTable(rows, ["type", "date", "account", "amount"], true);
+    $("cdTable").innerHTML = txnTable(rows, ["type", "num", "date", "account", "amount"], true);
     return rows;
   };
   $("cdType").onchange = $("cdYear").onchange = draw;
   $("cdTable").onclick = onTxnClick;
-  $("cdCsv").onclick = () => downloadCsv(`${r.n}.csv`, ["date", "type", "name", "account", "amount"], draw().map(csvRow));
+  $("cdCsv").onclick = () => downloadCsv(`${r.n}.csv`, ["date", "type", "num", "name", "account", "amount"], draw().map(csvRow));
   draw();
 }
-const csvRow = (t) => ({ date: t.date, type: t.type, name: t.name, account: t.accts.join(" / "), amount: t.amount });
+const csvRow = (t) => ({ date: t.date, type: t.type, num: t.num, name: t.name, account: t.accts.join(" / "), amount: t.amount });
 
 // ---------- chart of accounts ----------
 function renderAcctList() {
@@ -620,7 +632,7 @@ function initJournal(opts) {
   for (const id of ["jFrom", "jTo", "jText", "jMin"]) $(id).value = "";
   $("jType").value = opts.type || ""; $("jRange").value = opts.year || "";
   for (const id of ["jType", "jRange", "jFrom", "jTo", "jText", "jMin"]) $(id).oninput = renderJournal;
-  $("jCsv").onclick = () => downloadCsv("transactions.csv", ["date", "type", "name", "account", "amount"], journalRows().map(csvRow));
+  $("jCsv").onclick = () => downloadCsv("transactions.csv", ["date", "type", "num", "name", "account", "amount"], journalRows().map(csvRow));
   $("jTable").onclick = onTxnClick;
   renderJournal();
 }
@@ -631,13 +643,13 @@ function journalRows() {
   $("jFrom").classList.toggle("hidden", rg !== "custom"); $("jTo").classList.toggle("hidden", rg !== "custom");
   return txns.filter((t) => (!ty || t.type === ty) && (!rg || rg === "custom" || t.date.startsWith(rg)) &&
     (!from || t.date >= from) && (!to || t.date <= to) &&
-    (!q || t.others.some((n) => n.toLowerCase().includes(q)) || t.accts.some((a) => a.toLowerCase().includes(q))) &&
+    (!q || t.others.some((n) => n.toLowerCase().includes(q)) || t.accts.some((a) => a.toLowerCase().includes(q)) || t.num.includes(q) || t.main.a.toLowerCase().includes(q)) &&
     (min == null || (t.amount != null && Math.abs(t.amount) >= min)));
 }
 function renderJournal() {
   const rows = journalRows();
   $("jInfo").textContent = `${fmtInt.format(rows.length)} transactions`;
-  $("jTable").innerHTML = txnTable(rows, ["date", "type", "name", "account", "amount"], true);
+  $("jTable").innerHTML = txnTable(rows, ["date", "type", "num", "name", "account", "amount"], true);
 }
 
 // ---------- lists ----------
