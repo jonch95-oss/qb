@@ -32,7 +32,6 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 [[package]]
 name = "openqbw"
 version = "0.1.6"
-source = "git+https://github.com/Sigilweaver/OpenQBW?rev=e11017e1259f886610b4570215d0e8ea133c103a#e11017e1259f886610b4570215d0e8ea133c103a"
 dependencies = [
  "opensqlany",
  "thiserror",

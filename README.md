@@ -18,7 +18,9 @@ Open a QuickBooks Desktop company file (`.qbw`) **without QuickBooks**: open
 
 The decoding is done by [OpenQBW](https://github.com/Sigilweaver/OpenQBW), an open-source
 (Apache-2.0), read-only, reverse-engineered `.qbw` parser. It is compiled to WebAssembly
-(`wasm/`) and embedded in the HTML page.
+(`wasm/`) and embedded in the HTML page. A lightly patched copy of OpenQBW lives in
+`wasm/vendor/openqbw` (see its `VENDORED.md`): it decodes each page once instead of once per
+extraction pass, which makes large files several times faster with identical results.
 
 OpenQBW extracts transactions, dates and amounts. It does not label name or address fields yet,
 so this viewer recovers them from the readable text in each record. It uses the first text in a

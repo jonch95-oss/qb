@@ -1,0 +1,13 @@
+[package]
+license = "Apache-2.0"
+name = "openqbw"
+version = "0.1.6"
+edition = "2024"
+keywords = ["quickbooks", "qbw", "accounting", "parser"]
+categories = ["parser-implementations"]
+description = "QuickBooks .qbw file parser built on opensqlany page-store."
+
+[dependencies]
+opensqlany = "0.2.0"
+thiserror = "2"
+

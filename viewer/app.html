@@ -32,6 +32,8 @@
   #drop h2 { font-size: 22px; margin: 0 0 8px; }
   #drop p { color: var(--muted); max-width: 620px; margin: 8px auto; }
   .big { font-size: 15px; padding: 10px 18px !important; }
+  .progress { max-width: 420px; height: 8px; margin: 12px auto 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  #progBar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
   .spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin: 16px auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
   code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
@@ -91,7 +93,12 @@
          It is read entirely inside your browser; nothing is uploaded and the file is not changed.</p>
       <p><button class="btn primary big" id="chooseBtn">Choose .qbw file…</button></p>
       <input type="file" id="picker" accept=".qbw,.QBW" class="hidden">
-      <div id="busy" class="hidden"><div class="spinner"></div><p id="busyMsg">Reading…</p></div>
+      <div id="busy" class="hidden">
+        <div class="spinner"></div>
+        <p id="busyMsg">Reading…</p>
+        <div class="progress"><div id="progBar"></div></div>
+        <p id="progMsg" class="muted"></p>
+      </div>
       <p id="loadMsg"></p>
     </div>
   </section>
@@ -165,7 +172,16 @@ const WASM_B64 = "__WASM_BASE64__";
 self.onmessage = async (e) => {
   try {
     const bin = Uint8Array.from(atob(WASM_B64), (c) => c.charCodeAt(0));
-    const { instance } = await WebAssembly.instantiate(bin, {});
+    let last = 0;
+    const env = {
+      progress: (step, done, total) => {
+        const now = Date.now();
+        if (now - last < 150 && done < total) return;
+        last = now;
+        self.postMessage({ progress: [step, done, total] });
+      },
+    };
+    const { instance } = await WebAssembly.instantiate(bin, { env });
     const x = instance.exports;
     const bytes = new Uint8Array(e.data);
     const ptr = x.alloc(bytes.length);
@@ -216,10 +232,25 @@ function decode(buffer) {
     const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
     let worker;
     try { worker = new Worker(url); } catch (e) { reject(new Error("Your browser blocked the background reader: " + e.message)); return; }
-    worker.onmessage = (e) => { worker.terminate(); URL.revokeObjectURL(url); e.data.error ? reject(new Error(e.data.error)) : resolve(JSON.parse(e.data.json)); };
+    worker.onmessage = (e) => {
+      if (e.data.progress) { onProgress(...e.data.progress); return; }
+      worker.terminate(); URL.revokeObjectURL(url);
+      e.data.error ? reject(new Error(e.data.error)) : resolve(JSON.parse(e.data.json));
+    };
     worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message || "The reader crashed (the file may be too large for this browser).")); };
     worker.postMessage(buffer, [buffer]);
   });
+}
+
+const STEPS = { 1: "Unlocking pages", 2: "Unlocking the remaining data pages", 3: "Reading transactions and names" };
+let startedAt = 0;
+function onProgress(step, done, total) {
+  // Steps 1 and 3 are quick passes; step 2 is the slow one when it is needed.
+  const weights = { 1: [0, 70], 2: [70, 95], 3: [95, 100] }[step];
+  const pct = weights[0] + (weights[1] - weights[0]) * (total ? done / total : 1);
+  $("progBar").style.width = pct.toFixed(1) + "%";
+  const secs = Math.round((Date.now() - startedAt) / 1000);
+  $("progMsg").textContent = `Step ${step} of 3: ${STEPS[step]}… ${Math.round(pct)}% · ${secs}s elapsed`;
 }
 
 async function openFile(file) {
@@ -230,7 +261,10 @@ async function openFile(file) {
     return;
   }
   $("busy").classList.remove("hidden");
-  $("busyMsg").textContent = `Reading ${file.name} (${(file.size / 1048576).toFixed(1)} MB)… large files can take a minute.`;
+  $("busyMsg").textContent = `Reading ${file.name} (${(file.size / 1048576).toFixed(1)} MB)…`;
+  startedAt = Date.now();
+  $("progBar").style.width = "0%";
+  $("progMsg").textContent = "Starting…";
   try {
     const result = await decode(await file.arrayBuffer());
     if (result.error) throw new Error(result.error);

@@ -10,7 +10,7 @@ license = "Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-openqbw = { git = "https://github.com/Sigilweaver/OpenQBW", rev = "e11017e1259f886610b4570215d0e8ea133c103a" }
+openqbw = { path = "vendor/openqbw" }
 opensqlany = "0.2.0"
 serde_json = "1"
 
