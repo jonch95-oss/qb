@@ -78,9 +78,8 @@
   <span class="file" id="fileName"></span>
   <nav id="tabs" class="hidden">
     <button data-tab="overview" class="on">Overview</button>
-    <button data-tab="names">Vendors &amp; names</button>
-    <button data-tab="transactions">Transactions</button>
-    <button data-tab="lists">All data</button>
+    <button data-tab="names">Vendors &amp; lists</button>
+    <button data-tab="search">Search everything</button>
     <button class="btn" id="openAnother">Open another file</button>
   </nav>
 </header>
@@ -106,55 +105,42 @@
   <section id="overview" class="hidden">
     <div class="tiles" id="tiles"></div>
     <div class="panel">
-      <h3>By transaction type</h3>
-      <div class="scroll"><table id="byType"></table></div>
+      <h3>Most-used vendors</h3>
+      <p class="muted" style="margin-top:-8px">How many records in the file mention each vendor by name (bills, checks, card charges, payments…).</p>
+      <div class="scroll"><table id="topVendors"></table></div>
     </div>
     <div class="panel">
-      <h3>By year</h3>
-      <div class="scroll"><table id="byYear"></table></div>
+      <h3>Lists found</h3>
+      <div class="scroll"><table id="listSummary"></table></div>
     </div>
-    <p class="muted">Decoded with <a href="https://github.com/Sigilweaver/OpenQBW">OpenQBW</a>, an open-source, reverse-engineered, read-only parser.
-      Amounts marked <span class="warn">*</span> include values OpenQBW cannot decode yet and are left out of totals, so totals can be lower than QuickBooks shows.</p>
+    <p class="muted">Pages are unlocked with <a href="https://github.com/Sigilweaver/OpenQBW">OpenQBW</a>'s open-source key recovery.
+      Names, dates added and mentions are read directly from the file's list records. Transaction amounts and dates are not decoded yet.</p>
   </section>
 
   <section id="names" class="hidden">
     <div class="panel">
       <div class="controls">
-        <label>List <select id="nTable"></select></label>
-        <label>Search <input type="search" id="nSearch" placeholder="Name, address, phone…" style="width:260px"></label>
+        <label>List <select id="nList"></select></label>
+        <label>Search <input type="search" id="nSearch" placeholder="Name…" style="width:240px"></label>
+        <label>Sort <select id="nSort">
+          <option value="name">Name A–Z</option>
+          <option value="uses">Most mentioned</option>
+          <option value="added">Newest first</option>
+        </select></label>
         <button class="btn primary" id="nCsv" style="margin-left:auto">Export CSV</button>
       </div>
       <div class="muted" id="nInfo"></div>
       <div class="scroll"><table id="nGrid"></table></div>
       <div class="pager"><button class="btn" id="nPrev">‹ Prev</button><span id="nPage"></span><button class="btn" id="nNext">Next ›</button></div>
     </div>
-    <p class="muted">Names are recovered from the readable text stored in each record. OpenQBW does not label individual fields yet,
-      so the first text in a record is shown as the name and the rest (address, phone, email, notes…) as details.
-      If the list you need isn't picked automatically, choose another one above or search in <b>All data</b>.</p>
+    <p class="muted">List names are recognised from the content, so a label can occasionally be off. Pick another list above if needed.
+      Click a name to see the records that mention it.</p>
   </section>
 
-  <section id="transactions" class="hidden">
+  <section id="search" class="hidden">
     <div class="panel">
       <div class="controls">
-        <label>Type <select id="fType"><option value="">All types</option></select></label>
-        <label>From <input type="date" id="fFrom"></label>
-        <label>To <input type="date" id="fTo"></label>
-        <label>Search <input type="search" id="fText" placeholder="Name or ID…"></label>
-        <label>Min amount <input type="number" id="fMin" step="0.01" style="width:110px"></label>
-        <button class="btn" id="fReset">Reset</button>
-        <button class="btn primary" id="fCsv" style="margin-left:auto">Export CSV</button>
-      </div>
-      <div class="muted" id="txSummary"></div>
-      <div class="scroll"><table id="txTable"></table></div>
-      <div class="pager"><button class="btn" id="pPrev">‹ Prev</button><span id="pInfo"></span><button class="btn" id="pNext">Next ›</button></div>
-    </div>
-  </section>
-
-  <section id="lists" class="hidden">
-    <div class="panel">
-      <div class="controls">
-        <label>Search everything <input type="search" id="aSearch" placeholder="Type at least 2 characters…" style="width:320px"></label>
-        <label>Table <select id="aTable"><option value="">All tables</option></select></label>
+        <label>Search all readable text <input type="search" id="aSearch" placeholder="Type at least 2 characters…" style="width:340px"></label>
         <button class="btn primary" id="aCsv" style="margin-left:auto">Export CSV</button>
       </div>
       <div class="muted" id="aInfo"></div>
@@ -198,23 +184,13 @@ self.onmessage = async (e) => {
 <script>
 "use strict";
 const PAGE = 200;
-// SA17 stores dates as days with SA-day 4017 == 1970-01-01 (OpenQBW src/date.rs).
-const SA_EPOCH = 4017;
-const ID_RE = /^[0-9A-Za-z]{16}$/;
 const $ = (id) => document.getElementById(id);
-let data = null, txRows = [], lineMap = new Map(), records = [], txSort = { key: "date", dir: -1 };
-const pages = { tx: 0, names: 0, all: 0 };
-
-const fmtMoney = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+let data = null, lists = [], mentions = new Map(), textRows = [];
+const pages = { names: 0, all: 0 };
 const fmtInt = new Intl.NumberFormat();
-function qbDate(raw) {
-  if (raw == null || raw < 1 || raw > 80000) return null;
-  return new Date((raw - SA_EPOCH) * 86400000).toISOString().slice(0, 10);
-}
-function money(c) { return c == null ? "" : `<span class="${c < 0 ? "neg" : ""}">${fmtMoney.format(c / 100)}</span>`; }
+const fmtDate = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
 function esc(v) { return String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function pretty(t) { return String(t || "").replace(/^abmc_/, "").replace(/_/g, " "); }
-function isId(s) { return ID_RE.test(s) && /\d/.test(s); }
+function added(c) { return c > 946684800 && c < 4102444800 ? new Date(c * 1000) : null; }
 
 function downloadCsv(name, cols, rows) {
   const cell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -226,6 +202,16 @@ function downloadCsv(name, cols, rows) {
 }
 
 // ---------- loading ----------
+const STEPS = { 1: "Unlocking pages", 2: "Reading names and records" };
+let startedAt = 0;
+function onProgress(step, done, total) {
+  const [from, to] = { 1: [0, 88], 2: [88, 100] }[step];
+  const pct = from + (to - from) * (total ? done / total : 1);
+  $("progBar").style.width = pct.toFixed(1) + "%";
+  const secs = Math.round((Date.now() - startedAt) / 1000);
+  $("progMsg").textContent = `Step ${step} of 2: ${STEPS[step]}… ${Math.round(pct)}% · ${secs}s elapsed`;
+}
+
 function decode(buffer) {
   return new Promise((resolve, reject) => {
     const src = $("worker-src").textContent;
@@ -240,17 +226,6 @@ function decode(buffer) {
     worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message || "The reader crashed (the file may be too large for this browser).")); };
     worker.postMessage(buffer, [buffer]);
   });
-}
-
-const STEPS = { 1: "Unlocking pages", 2: "Unlocking the remaining data pages", 3: "Reading transactions and names" };
-let startedAt = 0;
-function onProgress(step, done, total) {
-  // Steps 1 and 3 are quick passes; step 2 is the slow one when it is needed.
-  const weights = { 1: [0, 70], 2: [70, 95], 3: [95, 100] }[step];
-  const pct = weights[0] + (weights[1] - weights[0]) * (total ? done / total : 1);
-  $("progBar").style.width = pct.toFixed(1) + "%";
-  const secs = Math.round((Date.now() - startedAt) / 1000);
-  $("progMsg").textContent = `Step ${step} of 3: ${STEPS[step]}… ${Math.round(pct)}% · ${secs}s elapsed`;
 }
 
 async function openFile(file) {
@@ -272,7 +247,7 @@ async function openFile(file) {
     $("fileName").textContent = file.name;
     show();
   } catch (e) {
-    $("loadMsg").innerHTML = `<span class="err">Could not read this file: ${esc(e.message)}\nOpenQBW supports QuickBooks Desktop 2018 and later; password-protected files cannot be opened.</span>`;
+    $("loadMsg").innerHTML = `<span class="err">Could not read this file: ${esc(e.message)}</span>`;
   } finally {
     $("busy").classList.add("hidden");
   }
@@ -289,51 +264,79 @@ document.addEventListener("drop", (e) => {
   if (f) { if (data) { $("loader").classList.remove("hidden"); hideTabs(); } openFile(f); }
 });
 
-function hideTabs() { for (const s of ["overview", "names", "transactions", "lists"]) $(s).classList.add("hidden"); }
+const SECTIONS = ["overview", "names", "search"];
+function hideTabs() { for (const s of SECTIONS) $(s).classList.add("hidden"); }
 function selectTab(t) {
   for (const b of $("tabs").querySelectorAll("[data-tab]")) b.classList.toggle("on", b.dataset.tab === t);
-  for (const s of ["overview", "names", "transactions", "lists"]) $(s).classList.toggle("hidden", s !== t);
+  for (const s of SECTIONS) $(s).classList.toggle("hidden", s !== t);
   $("detail").classList.add("hidden");
 }
 $("tabs").addEventListener("click", (e) => { if (e.target.dataset.tab) selectTab(e.target.dataset.tab); });
 
 // ---------- model ----------
+// Rows of one QuickBooks list share a column bitmap (`g`). Name the lists
+// from what they contain.
+function labelLists(entries) {
+  const groups = new Map();
+  for (const e of entries) {
+    if (!groups.has(e.g)) groups.set(e.g, []);
+    groups.get(e.g).push(e);
+  }
+  const share = (v, re) => v.filter((e) => re.test(e.n)).length / v.length;
+  const out = [];
+  for (const [g, v] of groups) out.push({ g, entries: v });
+  out.sort((a, b) => b.entries.length - a.entries.length);
+  // The biggest list of mostly non-address names is the vendor list; lists
+  // whose bitmap differs only in its first byte(s) are the same table.
+  const vendor = out.find((l) => l.entries.length >= 20 && share(l.entries, /^\d/) < 0.3 &&
+    share(l.entries, /(Expense|Income|Payable|Receivable|Profit|Balance Sheet|Net \d+)/i) < 0.2);
+  const final = [];
+  for (const l of out) {
+    const v = l.entries;
+    let label;
+    if (vendor && l !== vendor && l.g.length >= 4 && (vendor.g.endsWith(l.g) || l.g.endsWith(vendor.g))) {
+      vendor.entries.push(...v); continue;
+    }
+    if (l === vendor) label = "Vendors";
+    else if (v.some((e) => /^(Net \d+|Due on receipt|\d+% \d+ Net \d+)$/i.test(e.n))) label = "Payment terms";
+    else if (share(v, /(Profit & Loss|Balance Sheet|Aging|Summary|Detail|Payroll|Ledger|Trial Balance|Journal|Open Invoices|Job )/i) >= 0.3) label = "Memorized reports";
+    else if (share(v, /(Expense|Income|Payable|Receivable|Equity|Depreciation|Insurance|Subscriptions|Education|Licenses|Fees|Interest|Cost of|Reproduction|Supplies|Utilities|Rent)/i) >= 0.4) label = "Accounts";
+    else if (share(v, /(Receipt|Estimate|Invoice|Order|Statement|Packing|Credit Memo|Sales)/i) >= 0.4) label = "Forms & templates";
+    else if (v.length >= 10 && share(v, /^\d/) >= 0.5) label = "Customers, jobs & properties";
+    else if (v.length >= 10) label = `Other list (${v[0].n}…)`;
+    else label = null; // tiny lists are usually stray rows; keep them under "Other names"
+    if (v.length < 5 && l !== vendor) label = null;
+    final.push({ ...l, label });
+  }
+  const strays = final.filter((l) => !l.label);
+  const named = final.filter((l) => l.label);
+  if (strays.length) named.push({ g: "_other", label: "Other names", entries: strays.flatMap((l) => l.entries) });
+  // Number duplicate labels.
+  const seen = new Map();
+  for (const l of named) {
+    const c = (seen.get(l.label) || 0) + 1; seen.set(l.label, c);
+    if (c > 1) l.label += ` (${c})`;
+  }
+  for (const l of named) l.entries.sort((a, b) => a.n.localeCompare(b.n));
+  return named;
+}
+
 function buildModel() {
-  // Text records: one entry per row of every QuickBooks table.
-  records = [];
-  for (const [table, rows] of Object.entries(data.records || {})) {
-    for (const strings of rows) {
-      const ids = strings.filter(isId);
-      const text = strings.filter((s) => !isId(s));
-      records.push({ table, ids, text, name: text[0] || "", details: text.slice(1).join(" · "), search: strings.join(" ").toLowerCase() });
+  textRows = (data.text || []).map(([page, isList, strings]) => ({ page, isList, strings, search: strings.join(" · ").toLowerCase() }));
+  const entries = (data.lists || []).filter((e) => e.n);
+  // A name "mentioned" in a record = the exact name appears as a field of a
+  // non-list row (transactions store names as text).
+  const names = new Set(entries.map((e) => e.n));
+  mentions = new Map();
+  textRows.forEach((r, i) => {
+    if (r.isList) return;
+    for (const s of new Set(r.strings)) if (names.has(s)) {
+      if (!mentions.has(s)) mentions.set(s, []);
+      mentions.get(s).push(i);
     }
-  }
-  // Best-effort link from an ID to the list record that owns it (first ID in the row).
-  const owner = new Map();
-  for (const r of records) {
-    if (/_(header|lineitem|line)$/i.test(r.table) || !r.ids.length || !r.name) continue;
-    if (!owner.has(r.ids[0])) owner.set(r.ids[0], r);
-  }
-  const headerRows = new Map();
-  for (const r of records) if (/_header$/i.test(r.table) && r.ids.length) headerRows.set(r.ids[0], r);
-
-  lineMap = new Map();
-  for (const [parent, item, kind, cents, table] of data.lines || []) {
-    if (!lineMap.has(parent)) lineMap.set(parent, []);
-    lineMap.get(parent).push({ item, kind, cents, table, itemName: owner.get(item)?.name || "" });
-  }
-
-  txRows = (data.transactions || []).map((t) => {
-    const hr = headerRows.get(t.id);
-    let party = "", partyTable = "";
-    if (hr) {
-      for (const id of hr.ids.slice(1)) {
-        const o = owner.get(id);
-        if (o) { party = o.name; partyTable = o.table; break; }
-      }
-    }
-    return { ...t, date: qbDate(t.date_raw), party, partyTable, memo: hr ? hr.text.join(" · ") : "" };
   });
+  for (const e of entries) e.uses = (mentions.get(e.n) || []).length;
+  lists = labelLists(entries);
 }
 
 function show() {
@@ -342,194 +345,119 @@ function show() {
   $("tabs").classList.remove("hidden");
   renderOverview();
   initNames();
-  initTransactions();
-  initAll();
+  initSearch();
   selectTab("overview");
 }
 
 // ---------- overview ----------
 function renderOverview() {
-  const dates = txRows.map((r) => r.date).filter(Boolean).sort();
-  const userTables = (data.tables || []).filter((t) => !t.system);
+  const count = (re) => lists.filter((l) => re.test(l.label)).reduce((s, l) => s + l.entries.length, 0);
   const tiles = [
-    ["Transactions", fmtInt.format(txRows.length)],
-    ["Line items", fmtInt.format((data.lines || []).length)],
-    ["Text records", fmtInt.format(records.length)],
-    ["QuickBooks tables", fmtInt.format(userTables.length)],
-    ["Date range", dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : "—"],
-    ["File size", `${(data.file_size / 1048576).toFixed(1)} MB`],
+    ["Vendors", fmtInt.format(count(/^Vendors/))],
+    ["Customers, jobs & properties", fmtInt.format(count(/^Customers/))],
+    ["Accounts", fmtInt.format(count(/^Accounts/))],
+    ["Records with text", fmtInt.format(textRows.filter((r) => !r.isList).length)],
+    ["Pages unlocked", `${fmtInt.format(data.decoded_pages)} of ${fmtInt.format(data.pages)}`],
   ];
-  $("tiles").innerHTML = tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v" style="${k === "Date range" ? "font-size:16px" : ""}">${v}</div></div>`).join("");
+  $("tiles").innerHTML = tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 
-  const agg = (keyFn) => {
-    const m = new Map();
-    for (const r of txRows) {
-      const k = keyFn(r), a = m.get(k) || { k, n: 0, cents: 0, lines: 0, deferred: false };
-      a.n++; a.cents += r.total; a.lines += r.lines; a.deferred ||= r.deferred; m.set(k, a);
-    }
-    return [...m.values()];
-  };
-  const byType = agg((r) => r.type).sort((a, b) => b.n - a.n);
-  const maxN = Math.max(1, ...byType.map((a) => a.n));
-  $("byType").innerHTML = `<thead><tr><th>Type</th><th class="num">Count</th><th style="width:30%"></th><th class="num">Line items</th><th class="num">Total</th></tr></thead><tbody>` +
-    (byType.map((a) => `<tr class="click" data-type="${esc(a.k)}"><td><span class="tag">${esc(pretty(a.k))}</span></td><td class="num">${fmtInt.format(a.n)}</td><td><div class="bar" style="width:${(a.n / maxN) * 100}%"></div></td><td class="num">${fmtInt.format(a.lines)}</td><td class="num">${money(a.cents)}${a.deferred ? ' <span class="warn">*</span>' : ""}</td></tr>`).join("") ||
-      `<tr><td colspan="5" class="muted">No transactions were decoded from this file.</td></tr>`) + "</tbody>";
-  $("byType").onclick = (e) => {
-    const tr = e.target.closest("tr[data-type]");
-    if (!tr) return;
-    $("fType").value = tr.dataset.type; selectTab("transactions"); renderTx(true);
-  };
-  const byYear = agg((r) => (r.date ? r.date.slice(0, 4) : "unknown")).sort((a, b) => String(b.k).localeCompare(String(a.k)));
-  $("byYear").innerHTML = `<thead><tr><th>Year</th><th class="num">Transactions</th><th class="num">Line items</th><th class="num">Total</th></tr></thead><tbody>` +
-    byYear.map((a) => `<tr><td>${esc(a.k)}</td><td class="num">${fmtInt.format(a.n)}</td><td class="num">${fmtInt.format(a.lines)}</td><td class="num">${money(a.cents)}</td></tr>`).join("") + "</tbody>";
+  const vendors = lists.filter((l) => /^Vendors/.test(l.label)).flatMap((l) => l.entries).sort((a, b) => b.uses - a.uses).slice(0, 25);
+  const max = Math.max(1, ...vendors.map((e) => e.uses));
+  $("topVendors").innerHTML = `<thead><tr><th>Vendor</th><th class="num">Mentions</th><th style="width:40%"></th><th>Added</th></tr></thead><tbody>` +
+    (vendors.map((e) => `<tr class="click" data-name="${esc(e.n)}"><td class="name">${esc(e.n)}</td><td class="num">${fmtInt.format(e.uses)}</td><td><div class="bar" style="width:${(e.uses / max) * 100}%"></div></td><td>${added(e.c) ? fmtDate.format(added(e.c)) : ""}</td></tr>`).join("") ||
+      `<tr><td colspan="4" class="muted">No vendor list was recognised. Check the Vendors &amp; lists tab.</td></tr>`) + "</tbody>";
+  $("listSummary").innerHTML = `<thead><tr><th>List</th><th class="num">Entries</th><th>Examples</th></tr></thead><tbody>` +
+    lists.map((l, i) => `<tr class="click" data-list="${i}"><td><span class="tag">${esc(l.label)}</span></td><td class="num">${fmtInt.format(l.entries.length)}</td><td class="wrap muted">${esc(l.entries.slice(0, 4).map((e) => e.n).join(", "))}</td></tr>`).join("") + "</tbody>";
 }
+$("topVendors").addEventListener("click", (e) => { const tr = e.target.closest("tr[data-name]"); if (tr) showMentions(tr.dataset.name); });
+$("listSummary").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-list]");
+  if (!tr) return;
+  $("nList").value = tr.dataset.list; $("nSearch").value = ""; selectTab("names"); renderNames(true);
+});
 
-// ---------- vendors & names ----------
-function listTables() {
-  const counts = new Map();
-  for (const r of records) if (r.name && !/_(header|lineitem|line)$/i.test(r.table)) counts.set(r.table, (counts.get(r.table) || 0) + 1);
-  return [...counts.entries()];
-}
+// ---------- lists ----------
 function initNames() {
-  const tables = listTables();
-  const rank = (t) => (/vend/i.test(t) ? 0 : /cust|employee|name|entity|other/i.test(t) ? 1 : /account|item/i.test(t) ? 2 : 3);
-  tables.sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1]);
-  $("nTable").innerHTML = tables.map(([t, n]) => `<option value="${esc(t)}">${esc(pretty(t))} (${fmtInt.format(n)})</option>`).join("") ||
-    `<option value="">No text records found</option>`;
-  $("nTable").onchange = $("nSearch").oninput = () => renderNames(true);
+  $("nList").innerHTML = lists.map((l, i) => `<option value="${i}">${esc(l.label)} (${fmtInt.format(l.entries.length)})</option>`).join("") ||
+    `<option value="">No lists found</option>`;
+  $("nList").onchange = $("nSearch").oninput = $("nSort").onchange = () => renderNames(true);
   $("nPrev").onclick = () => { pages.names--; renderNames(); };
   $("nNext").onclick = () => { pages.names++; renderNames(); };
-  $("nCsv").onclick = () => downloadCsv(`${pretty($("nTable").value) || "names"}.csv`, ["name", "details"], filteredNames());
+  $("nCsv").onclick = () => {
+    const l = lists[$("nList").value];
+    downloadCsv(`${l ? l.label : "names"}.csv`, ["name", "mentions", "added", "list_id"],
+      filteredNames().map((e) => ({ name: e.n, mentions: e.uses, added: added(e.c) ? added(e.c).toISOString().slice(0, 10) : "", list_id: e.id || "" })));
+  };
   renderNames(true);
 }
 function filteredNames() {
-  const t = $("nTable").value, q = $("nSearch").value.trim().toLowerCase();
-  const seen = new Set();
-  return records.filter((r) => {
-    if (r.table !== t || !r.name || (q && !r.search.includes(q))) return false;
-    const key = r.name + "|" + r.details;
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  const l = lists[$("nList").value];
+  if (!l) return [];
+  const q = $("nSearch").value.trim().toLowerCase();
+  const rows = l.entries.filter((e) => !q || e.n.toLowerCase().includes(q));
+  const sort = $("nSort").value;
+  if (sort === "uses") rows.sort((a, b) => b.uses - a.uses || a.n.localeCompare(b.n));
+  else if (sort === "added") rows.sort((a, b) => (b.c || 0) - (a.c || 0));
+  else rows.sort((a, b) => a.n.localeCompare(b.n));
+  return rows;
 }
 function renderNames(reset) {
   if (reset) pages.names = 0;
   const rows = filteredNames();
   const n = Math.max(1, Math.ceil(rows.length / PAGE));
   pages.names = Math.min(Math.max(0, pages.names), n - 1);
-  const t = $("nTable").value;
-  const txCount = new Map();
-  for (const r of txRows) if (r.party && r.partyTable === t) txCount.set(r.party, (txCount.get(r.party) || 0) + 1);
-  $("nInfo").textContent = `${fmtInt.format(rows.length)} records in ${pretty(t) || "—"}`;
-  $("nGrid").innerHTML = `<thead><tr><th>Name</th><th>Details</th>${txCount.size ? '<th class="num">Transactions</th>' : ""}</tr></thead><tbody>` +
-    (rows.slice(pages.names * PAGE, (pages.names + 1) * PAGE).map((r) =>
-      `<tr><td class="name">${esc(r.name)}</td><td class="wrap detail-text">${esc(r.details)}</td>${txCount.size ? `<td class="num">${txCount.get(r.name) ? `<a href="#" data-party="${esc(r.name)}">${txCount.get(r.name)}</a>` : ""}</td>` : ""}</tr>`).join("") ||
-      `<tr><td colspan="3" class="muted">No records.</td></tr>`) + "</tbody>";
+  $("nInfo").textContent = `${fmtInt.format(rows.length)} entries`;
+  $("nGrid").innerHTML = `<thead><tr><th>Name</th><th class="num">Mentions</th><th>Added</th></tr></thead><tbody>` +
+    (rows.slice(pages.names * PAGE, (pages.names + 1) * PAGE).map((e) =>
+      `<tr class="click" data-name="${esc(e.n)}"><td class="name">${esc(e.n)}</td><td class="num">${e.uses ? fmtInt.format(e.uses) : '<span class="muted">0</span>'}</td><td>${added(e.c) ? fmtDate.format(added(e.c)) : '<span class="muted">—</span>'}</td></tr>`).join("") ||
+      `<tr><td colspan="3" class="muted">No entries.</td></tr>`) + "</tbody>";
   $("nPage").textContent = `Page ${pages.names + 1} of ${n}`;
   $("nPrev").disabled = pages.names === 0; $("nNext").disabled = pages.names >= n - 1;
 }
-$("nGrid").addEventListener("click", (e) => {
-  const a = e.target.closest("[data-party]");
-  if (!a) return;
-  e.preventDefault();
-  $("fReset").click(); $("fText").value = a.dataset.party; selectTab("transactions"); renderTx(true);
-});
+$("nGrid").addEventListener("click", (e) => { const tr = e.target.closest("tr[data-name]"); if (tr) showMentions(tr.dataset.name); });
 
-// ---------- transactions ----------
-const TX_COLS = [["date", "Date"], ["type", "Type"], ["party", "Name"], ["counter", "No.", true], ["lines", "Lines", true], ["total", "Total", true]];
-function initTransactions() {
-  const types = [...new Set(txRows.map((r) => r.type))].sort();
-  $("fType").innerHTML = `<option value="">All types</option>` + types.map((t) => `<option value="${esc(t)}">${esc(pretty(t))}</option>`).join("");
-  for (const id of ["fType", "fFrom", "fTo", "fText", "fMin"]) $(id).oninput = () => renderTx(true);
-  $("fReset").onclick = () => { for (const id of ["fType", "fFrom", "fTo", "fText", "fMin"]) $(id).value = ""; renderTx(true); };
-  $("pPrev").onclick = () => { pages.tx--; renderTx(); };
-  $("pNext").onclick = () => { pages.tx++; renderTx(); };
-  $("fCsv").onclick = () => downloadCsv("transactions.csv", ["date", "type", "party", "counter", "id", "lines", "amount", "memo"],
-    filteredTx().map((r) => ({ ...r, amount: (r.total / 100).toFixed(2) })));
-  renderTx(true);
-}
-function filteredTx() {
-  const type = $("fType").value, from = $("fFrom").value, to = $("fTo").value;
-  const q = $("fText").value.trim().toLowerCase();
-  const min = $("fMin").value === "" ? null : Math.round(parseFloat($("fMin").value) * 100);
-  const rows = txRows.filter((r) =>
-    (!type || r.type === type) && (!from || (r.date && r.date >= from)) && (!to || (r.date && r.date <= to)) &&
-    (!q || r.id.toLowerCase().includes(q) || r.party.toLowerCase().includes(q) || r.memo.toLowerCase().includes(q)) &&
-    (min == null || Math.abs(r.total) >= min));
-  const { key, dir } = txSort;
-  return rows.sort((a, b) => {
-    const x = a[key], y = b[key];
-    if (x == null || x === "") return y == null || y === "" ? 0 : 1;
-    if (y == null || y === "") return -1;
-    return (x < y ? -1 : x > y ? 1 : 0) * dir;
-  });
-}
-function renderTx(reset) {
-  if (reset) pages.tx = 0;
-  const rows = filteredTx();
-  const n = Math.max(1, Math.ceil(rows.length / PAGE));
-  pages.tx = Math.min(Math.max(0, pages.tx), n - 1);
-  $("txSummary").innerHTML = `${fmtInt.format(rows.length)} transactions · total ${money(rows.reduce((s, r) => s + r.total, 0))}`;
-  const head = TX_COLS.map(([k, label, num]) => `<th data-k="${k}" class="${num ? "num" : ""}">${label}${txSort.key === k ? (txSort.dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("");
-  $("txTable").innerHTML = `<thead><tr>${head}</tr></thead><tbody>` +
-    (rows.slice(pages.tx * PAGE, (pages.tx + 1) * PAGE).map((r) =>
-      `<tr class="click" data-id="${esc(r.id)}"><td>${r.date || '<span class="muted">—</span>'}</td><td><span class="tag">${esc(pretty(r.type))}</span></td><td>${esc(r.party) || '<span class="muted">—</span>'}</td><td class="num">${r.counter ?? ""}</td><td class="num">${r.lines}</td><td class="num">${money(r.total)}${r.deferred ? ' <span class="warn" title="Includes amounts that could not be decoded">*</span>' : ""}</td></tr>`).join("") ||
-      `<tr><td colspan="6" class="muted">No matching transactions.</td></tr>`) + "</tbody>";
-  $("pInfo").textContent = `Page ${pages.tx + 1} of ${n}`;
-  $("pPrev").disabled = pages.tx === 0; $("pNext").disabled = pages.tx >= n - 1;
-}
-$("txTable").addEventListener("click", (e) => {
-  const th = e.target.closest("th[data-k]");
-  if (th) { const k = th.dataset.k; txSort = { key: k, dir: txSort.key === k ? -txSort.dir : (k === "date" || k === "total" ? -1 : 1) }; renderTx(); return; }
-  const tr = e.target.closest("tr[data-id]");
-  if (tr) showDetail(tr.dataset.id);
-});
-function showDetail(id) {
-  const t = txRows.find((r) => r.id === id);
-  const lines = lineMap.get(id) || [];
-  const kind = { 0: "none", 1: "amount", 2: "amount", 3: "not decoded" };
+function showMentions(name) {
+  const entry = lists.flatMap((l) => l.entries.map((e) => ({ e, label: l.label }))).find((x) => x.e.n === name);
+  const rows = (mentions.get(name) || []).map((i) => textRows[i]);
+  const shown = rows.slice(0, 300);
   $("detail").innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center"><h2>${esc(pretty(t.type))}${t.party ? " · " + esc(t.party) : ""}</h2><button class="btn" id="dClose">Close</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>${esc(name)}</h2><button class="btn" id="dClose">Close</button></div>
     <dl>
-      <dt>Date</dt><dd>${t.date || "—"}</dd>
-      <dt>Number</dt><dd>${t.counter ?? "—"}</dd>
-      <dt>Name</dt><dd>${esc(t.party) || "—"}</dd>
-      <dt>Total</dt><dd>${money(t.total)}${t.deferred ? ' <span class="warn">* some lines not decoded</span>' : ""}</dd>
-      <dt>Text in record</dt><dd class="detail-text">${esc(t.memo) || "—"}</dd>
-      <dt>QuickBooks ID</dt><dd><code>${esc(t.id)}</code></dd>
+      ${entry ? `<dt>List</dt><dd>${esc(entry.label)}</dd>` : ""}
+      ${entry && added(entry.e.c) ? `<dt>Added</dt><dd>${fmtDate.format(added(entry.e.c))}</dd>` : ""}
+      <dt>Mentioned in</dt><dd>${fmtInt.format(rows.length)} records</dd>
+      ${entry && entry.e.d.length ? `<dt>Other text</dt><dd class="detail-text">${esc(entry.e.d.join(" · "))}</dd>` : ""}
+      ${entry && entry.e.id ? `<dt>QuickBooks ID</dt><dd><code>${esc(entry.e.id)}</code></dd>` : ""}
     </dl>
-    <h3>Line items (${lines.length})</h3>
-    ${lines.length ? `<table><thead><tr><th>#</th><th>Item</th><th class="num">Amount</th></tr></thead><tbody>` +
-      lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.itemName) || `<code class="muted">${esc(l.item || "")}</code>`}</td><td class="num ${l.kind === 3 ? "warn" : ""}">${l.kind === 3 ? kind[3] : money(l.cents)}</td></tr>`).join("") + "</tbody></table>"
-      : `<p class="muted">No line items were decoded for this transaction.</p>`}`;
+    <h3>Records that mention it</h3>
+    <p class="muted">Readable fields of each record: typically the account, payee, job or property, and memo.</p>
+    ${shown.length ? `<table><tbody>` + shown.map((r) => `<tr><td class="wrap">${r.strings.map((s) => s === name ? `<b>${esc(s)}</b>` : esc(s)).join(' <span class="muted">·</span> ')}</td></tr>`).join("") + "</tbody></table>" : `<p class="muted">No other records mention this name.</p>`}
+    ${rows.length > shown.length ? `<p class="muted">Showing the first ${shown.length}. Use Search everything for the rest.</p>` : ""}`;
   $("detail").classList.remove("hidden");
   $("dClose").onclick = () => $("detail").classList.add("hidden");
 }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("detail").classList.add("hidden"); });
 
-// ---------- all data ----------
-function initAll() {
-  const tables = [...new Set(records.map((r) => r.table))].sort();
-  $("aTable").innerHTML = `<option value="">All tables</option>` + tables.map((t) => `<option value="${esc(t)}">${esc(pretty(t))}</option>`).join("");
-  $("aSearch").oninput = $("aTable").onchange = () => renderAll(true);
-  $("aPrev").onclick = () => { pages.all--; renderAll(); };
-  $("aNext").onclick = () => { pages.all++; renderAll(); };
-  $("aCsv").onclick = () => downloadCsv("records.csv", ["table", "text", "ids"], filteredAll().map((r) => ({ table: r.table, text: r.text.join(" | "), ids: r.ids.join(" ") })));
-  renderAll(true);
+// ---------- search ----------
+function initSearch() {
+  $("aSearch").oninput = () => renderSearch(true);
+  $("aPrev").onclick = () => { pages.all--; renderSearch(); };
+  $("aNext").onclick = () => { pages.all++; renderSearch(); };
+  $("aCsv").onclick = () => downloadCsv("search.csv", ["text"], filteredSearch().map((r) => ({ text: r.strings.join(" | ") })));
+  renderSearch(true);
 }
-function filteredAll() {
-  const q = $("aSearch").value.trim().toLowerCase(), t = $("aTable").value;
-  if (!t && q.length < 2) return [];
-  return records.filter((r) => (!t || r.table === t) && (q.length < 2 || r.search.includes(q)));
+function filteredSearch() {
+  const q = $("aSearch").value.trim().toLowerCase();
+  return q.length < 2 ? [] : textRows.filter((r) => r.search.includes(q));
 }
-function renderAll(reset) {
+function renderSearch(reset) {
   if (reset) pages.all = 0;
-  const rows = filteredAll();
+  const rows = filteredSearch();
   const n = Math.max(1, Math.ceil(rows.length / PAGE));
   pages.all = Math.min(Math.max(0, pages.all), n - 1);
-  $("aInfo").textContent = rows.length ? `${fmtInt.format(rows.length)} matching records` : "Type a search or pick a table.";
-  $("aGrid").innerHTML = rows.length ? `<thead><tr><th>Table</th><th>Text</th></tr></thead><tbody>` +
-    rows.slice(pages.all * PAGE, (pages.all + 1) * PAGE).map((r) => `<tr><td><span class="tag">${esc(pretty(r.table))}</span></td><td class="wrap">${r.text.map(esc).join(' <span class="muted">·</span> ') || `<span class="muted">${esc(r.ids.join(" "))}</span>`}</td></tr>`).join("") + "</tbody>" : "";
+  $("aInfo").textContent = rows.length ? `${fmtInt.format(rows.length)} matching records` : "Type a name, address, memo, account…";
+  $("aGrid").innerHTML = rows.length ? `<tbody>` +
+    rows.slice(pages.all * PAGE, (pages.all + 1) * PAGE).map((r) => `<tr><td class="wrap">${r.isList ? '<span class="tag">list</span> ' : ""}${r.strings.map(esc).join(' <span class="muted">·</span> ')}</td></tr>`).join("") + "</tbody>" : "";
   $("aPage").textContent = `Page ${pages.all + 1} of ${n}`;
   $("aPrev").disabled = pages.all === 0; $("aNext").disabled = pages.all >= n - 1;
 }
