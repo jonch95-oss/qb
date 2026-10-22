@@ -323,3 +323,33 @@ mod tests {
         assert!(analyze_bytes(vec![0u8; 100]).is_err());
     }
 }
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+    use std::time::Instant;
+
+    /// QBW_BENCH=/path/file.qbw cargo test --release bench -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn phases() {
+        let path = std::env::var("QBW_BENCH").expect("set QBW_BENCH");
+        let store = PageStore::from_bytes(std::fs::read(path).unwrap()).unwrap();
+        let t = Instant::now();
+        let model = ApModel::learn(&store);
+        eprintln!("learn        {:?}", t.elapsed());
+        let t = Instant::now();
+        let tables = openqbw::collect_unique(&store, &model);
+        eprintln!("catalog      {:?} ({} tables)", t.elapsed(), tables.len());
+        let attribution = PageAttribution::from_catalog(tables);
+        let t = Instant::now();
+        let h = iter_transaction_headers(&store, &model, &attribution).count();
+        eprintln!("headers      {:?} ({h})", t.elapsed());
+        let t = Instant::now();
+        let l = iter_lineitems_with_attribution(&store, &model, &attribution).count();
+        eprintln!("lineitems    {:?} ({l})", t.elapsed());
+        let t = Instant::now();
+        let r = text_records(&store, &model, &attribution).len();
+        eprintln!("text         {:?} ({r})", t.elapsed());
+    }
+}
