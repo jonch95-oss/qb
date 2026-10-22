@@ -20,10 +20,26 @@
 //! ```
 //!
 //! The column bitmap is the same for every row of a list, so it is used to
-//! group names into lists. OpenQBW's own table map and transaction decoding
-//! do not match newer company files, so they are not used here.
+//! group names into lists.
+//!
+//! Transactions are read the same way. A transaction header row is
+//!
+//! ```text
+//! [row_len u16][00][bitmap 4][key_a u32][key_b u32][created u32][modified u32]
+//! [txn date: minutes since 1600-02-29, always midnight][...]
+//! ... [0x80][name kind][00][len][name] ...   kind 0 customer/job, 1 vendor,
+//!                                           2 employee, 3 other name
+//! ```
+//!
+//! and each of its lines (splits) starts with the same `key_a key_b`, then a
+//! line number and line id, the account (`[00 00 80][len][name]`) and, after
+//! the line's name reference, the amount as an SQL Anywhere decimal
+//! (`[digit count][sign|exponent][base-100 digits]`). The header bitmap
+//! differs by transaction type (and by which optional columns are filled).
+//! OpenQBW's own table map and transaction decoding do not match newer company
+//! files, so they are not used here.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 
 use openqbw::{
@@ -148,7 +164,7 @@ pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
         }
     }
 
-    // Step 2: read lists and collect readable text. Transactions store
+    // Step 2: read lists, transactions and readable text. Transactions store
     // names as text, so the page counts and shows the records mentioning
     // each name from `text`.
     let mut entries: Vec<ListEntry> = Vec::new();
@@ -167,6 +183,19 @@ pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
             }
         }
     }
+    let mut headers: Vec<TxnHeader> = Vec::new();
+    for (pn, p) in plain.iter().enumerate() {
+        if let Some(p) = p {
+            txn_headers(pn as u64, &p[..PAGE_BODY_END], &mut headers);
+        }
+    }
+    let mut seen = HashSet::new();
+    headers.retain(|h| seen.insert(h.key));
+    let keys: HashSet<(u32, u32)> = headers.iter().map(|h| h.key).collect();
+    let mut lines: HashMap<(u32, u32), Vec<(u32, Option<String>, Option<f64>)>> = HashMap::new();
+    for p in plain.iter().flatten() {
+        txn_lines(&p[..PAGE_BODY_END], &keys, &mut lines);
+    }
     report(2, n, n);
     dedupe(&mut entries);
     if decoded == 0 {
@@ -183,7 +212,171 @@ pub fn analyze_bytes(bytes: Vec<u8>) -> Result<Value, String> {
             json!({ "n": e.name, "id": e.list_id, "g": e.group, "d": e.details, "c": e.created, "p": e.page })
         }).collect::<Vec<_>>(),
         "text": text,
+        "txns": headers.iter().map(|h| {
+            let mut ls = lines.remove(&h.key).unwrap_or_default();
+            ls.sort_by_key(|l| l.0);
+            ls.dedup_by_key(|l| l.0);
+            json!({
+                "t": h.bitmap, "d": h.date_days, "c": h.created,
+                "n": h.names.iter().map(|(k, s)| json!([k, s])).collect::<Vec<_>>(),
+                "l": ls.iter().map(|(_, a, v)| json!([a, v])).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>(),
     }))
+}
+
+/// SQL Anywhere TIMESTAMP/DATE values count minutes from this day.
+const SA_EPOCH_DAYS_BEFORE_UNIX: i64 = 135_081; // 1600-02-29 .. 1970-01-01
+const MIN_TXN_MINUTES: u32 = 220_000_000; // ~2018
+const MAX_TXN_MINUTES: u32 = 228_000_000; // ~2033
+
+fn u32_at(b: &[u8], i: usize) -> u32 {
+    u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
+}
+
+fn is_unix_time(v: u32) -> bool {
+    (1_400_000_000..2_100_000_000).contains(&v)
+}
+
+/// A transaction header row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TxnHeader {
+    pub key: (u32, u32),
+    /// Column bitmap of the row, hex: identifies the transaction type.
+    pub bitmap: String,
+    /// Transaction date, days since 1970-01-01.
+    pub date_days: i64,
+    /// Entry time, Unix seconds.
+    pub created: u32,
+    /// Names on the transaction: (kind, name); kind 0 customer/job,
+    /// 1 vendor, 2 employee, 3 other name.
+    pub names: Vec<(u8, String)>,
+}
+
+/// Find transaction header rows: `[key_a][key_b][created][modified][date]`
+/// with both times plausible Unix times and the date exactly midnight.
+fn txn_headers(pn: u64, body: &[u8], out: &mut Vec<TxnHeader>) {
+    let _ = pn;
+    let mut starts = Vec::new();
+    let mut j = 15;
+    while j + 16 <= body.len() {
+        let (c1, c2, d) = (u32_at(body, j), u32_at(body, j + 4), u32_at(body, j + 8));
+        if is_unix_time(c1)
+            && is_unix_time(c2)
+            && c1.abs_diff(c2) < 400_000_000
+            && (MIN_TXN_MINUTES..MAX_TXN_MINUTES).contains(&d)
+            && d % 1440 == 0
+        {
+            starts.push(j);
+            j += 16;
+        } else {
+            j += 1;
+        }
+    }
+    // A bitmap made of letters is text that happened to match ("dmin").
+    starts.retain(|&j| !body[j - 12..j - 8].iter().all(|b| b.is_ascii_alphabetic()));
+    for (k, &j) in starts.iter().enumerate() {
+        // The row length sits before `[00][bitmap 4][key 8]`; fall back to
+        // the next header when it does not fit.
+        let row_end = (j - 15) + u16::from_le_bytes([body[j - 15], body[j - 14]]) as usize;
+        let next = starts.get(k + 1).map_or(body.len(), |&s| s.saturating_sub(15));
+        let end = if row_end > j + 16 && row_end <= body.len() { row_end } else { next.min(j + 420) };
+        let end = end.max(j + 16);
+        out.push(TxnHeader {
+            key: (u32_at(body, j - 8), u32_at(body, j - 4)),
+            bitmap: body[j - 12..j - 8].iter().map(|x| format!("{x:02x}")).collect(),
+            date_days: (u32_at(body, j + 8) / 1440) as i64 - SA_EPOCH_DAYS_BEFORE_UNIX,
+            created: u32_at(body, j),
+            names: name_refs(&body[j + 16..end]),
+        });
+    }
+}
+
+/// Name references `[0x80][kind 0..=3][00][len][name]` in a row.
+fn name_refs(row: &[u8]) -> Vec<(u8, String)> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 5 <= row.len() {
+        if row[i] == 0x80 && row[i + 1] <= 3 && row[i + 2] == 0 {
+            let len = row[i + 3] as usize;
+            if (2..=64).contains(&len)
+                && i + 4 + len <= row.len()
+                && let Some(name) = clean(&row[i + 4..i + 4 + len])
+            {
+                out.push((row[i + 1], name));
+                i += 4 + len;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Find the lines of known transactions: `[key_a][key_b][line no][line id]`,
+/// then the account, the line's name reference and its amount. (The rate
+/// after the quantity is not used: it is stored at a different scale.)
+fn txn_lines(
+    body: &[u8],
+    keys: &HashSet<(u32, u32)>,
+    out: &mut HashMap<(u32, u32), Vec<(u32, Option<String>, Option<f64>)>>,
+) {
+    let mut j = 0;
+    while j + 16 <= body.len() {
+        let key = (u32_at(body, j), u32_at(body, j + 4));
+        let line_no = u32_at(body, j + 8);
+        let line_id = u32_at(body, j + 12);
+        if !(1..=500).contains(&line_no) || !(key.0 < line_id && line_id < key.0.saturating_add(5000)) || !keys.contains(&key) {
+            j += 1;
+            continue;
+        }
+        let end = (j + 420).min(body.len());
+        let row = &body[j + 16..end];
+        let account = row
+            .windows(3)
+            .take(32)
+            .position(|w| w == [0, 0, 0x80])
+            .and_then(|p| {
+                let len = *row.get(p + 3)? as usize;
+                (2..=64).contains(&len).then(|| clean(row.get(p + 4..p + 4 + len)?)).flatten()
+            });
+        let mut amount = None;
+        let mut i = 0;
+        while i + 5 <= row.len() {
+            if row[i] == 0x80 && row[i + 1] <= 3 && row[i + 2] == 0 {
+                let len = row[i + 3] as usize;
+                if (2..=64).contains(&len) && i + 4 + len < row.len() {
+                    amount = sa_decimal(&row[i + 4 + len..]);
+                    break;
+                }
+            }
+            i += 1;
+        }
+        let amount = amount.map(|v| (v * 100.0).round() / 100.0);
+        out.entry(key).or_default().push((line_id, account, amount));
+        j += 16;
+    }
+}
+
+/// SQL Anywhere NUMERIC: `[digit count][sign bit | exponent][base-100
+/// digits]`. The digits form an integer whose last pair is the
+/// 100^(exponent - 0x40) place (trailing zero pairs are dropped), so $60 is
+/// `01 40 3c` and $98.04 is `02 3f 62 04`. The high bit marks a negative.
+fn sa_decimal(b: &[u8]) -> Option<f64> {
+    let (&count, rest) = b.split_first()?;
+    let (&exp, digits) = rest.split_first()?;
+    let count = count as usize;
+    if !(1..=8).contains(&count) || !(0x3a..0x46).contains(&(exp & 0x7f)) || digits.len() < count {
+        return None;
+    }
+    let digits = &digits[..count];
+    if digits.iter().any(|&d| d > 99) {
+        return None;
+    }
+    let n = digits.iter().fold(0f64, |n, &d| n * 100.0 + d as f64);
+    let v = n * 100f64.powi((exp & 0x7f) as i32 - 0x40);
+    let v = (v * 10_000.0).round() / 10_000.0;
+    Some(if exp & 0x80 != 0 { -v } else { v })
 }
 
 /// Find list records on a decoded page by scanning for their timestamp
@@ -514,6 +707,57 @@ mod tests {
         assert_eq!(column_bitmap(&vendor), "efc43880");
         assert_eq!(column_bitmap(&vendor_long), "efc43880");
         assert_eq!(column_bitmap(&account), "fffb91");
+    }
+
+    #[test]
+    fn sa_decimals() {
+        assert_eq!(sa_decimal(&[0x02, 0xbf, 0x62, 0x04]), Some(-98.04));
+        assert_eq!(sa_decimal(&[0x02, 0x3f, 0x54, 0x21]), Some(84.33));
+        assert_eq!(sa_decimal(&[0x01, 0xc0, 0x3c]), Some(-60.0));
+        assert_eq!(sa_decimal(&[0x01, 0x41, 0x08]), Some(800.0));
+        assert_eq!(sa_decimal(&[0x02, 0xbf, 0x03, 0x35]), Some(-3.53));
+        assert_eq!(sa_decimal(&[0x02, 0x3f, 0x99, 0x01]), None);
+    }
+
+    #[test]
+    fn finds_transaction_and_lines() {
+        // Header: bitmap, key, created x2, date 2021-12-19, then the payee.
+        let mut page = vec![0u8; 40];
+        page.extend_from_slice(&[0x77, 0x00, 0x00, 0xf0, 0x0b, 0x89, 0x80]);
+        page.extend_from_slice(&7696u32.to_le_bytes());
+        page.extend_from_slice(&1021u32.to_le_bytes());
+        page.extend_from_slice(&0x61c2_5f2fu32.to_le_bytes());
+        page.extend_from_slice(&0x61c2_5f2fu32.to_le_bytes());
+        page.extend_from_slice(&0x0d39_2120u32.to_le_bytes());
+        page.extend_from_slice(&[0; 24]);
+        page.extend_from_slice(&[0x80, 0x01, 0x00, 0x08]);
+        page.extend_from_slice(b"Speedway");
+        page.extend_from_slice(&[0; 70]);
+        // Line: key, line 1, line id, account, payee, amount.
+        page.extend_from_slice(&7696u32.to_le_bytes());
+        page.extend_from_slice(&1021u32.to_le_bytes());
+        page.extend_from_slice(&1u32.to_le_bytes());
+        page.extend_from_slice(&7698u32.to_le_bytes());
+        page.extend_from_slice(&[0x33, 0x00, 0x00, 0x80, 0x16]);
+        page.extend_from_slice(b"Automobile Expense:Gas");
+        page.extend_from_slice(&[0x17, 0x00, 0x00, 0x80, 0x01, 0x00, 0x08]);
+        page.extend_from_slice(b"Speedway");
+        page.extend_from_slice(&[0x02, 0xbf, 0x62, 0x04, 0x00]);
+        page.extend_from_slice(&[0; 40]);
+
+        let mut headers = Vec::new();
+        txn_headers(1, &page, &mut headers);
+        assert_eq!(headers.len(), 1);
+        let h = &headers[0];
+        assert_eq!(h.key, (7696, 1021));
+        assert_eq!(h.bitmap, "f00b8980");
+        assert_eq!(h.date_days, 18980); // 2021-12-19
+        assert_eq!(h.names, vec![(1, "Speedway".to_string())]);
+
+        let keys = HashSet::from([h.key]);
+        let mut lines = HashMap::new();
+        txn_lines(&page, &keys, &mut lines);
+        assert_eq!(lines[&h.key], vec![(7698, Some("Automobile Expense:Gas".into()), Some(-98.04))]);
     }
 
     #[test]

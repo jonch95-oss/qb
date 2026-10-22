@@ -6,151 +6,220 @@
 <title>QBW Viewer</title>
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #677085; --line: #e2e5eb;
-    --accent: #2f6fdf; --accent-soft: #e8f0fd; --neg: #c0392b; --warn: #a86b00;
+    --bg: #eef1f4; --panel: #fff; --text: #1f2328; --muted: #5f6b7a; --line: #dde2e8; --row: #f7f9fa;
+    --side: #2b3036; --side-text: #c9d1d9; --side-on: #3b434c;
+    --accent: #2ca01c; --accent-soft: #e6f4e3; --link: #0d6fb8; --sel: #dbeaf7; --neg: #b42318;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #14171c; --panel: #1c2027; --text: #e6e9ef; --muted: #98a1b3; --line: #2c323c;
-      --accent: #6b9cff; --accent-soft: #233150; --neg: #ff7a6b; --warn: #e0a940;
+      --bg: #15181c; --panel: #1d2126; --text: #e6e9ee; --muted: #9aa5b3; --line: #2e343c; --row: #22272d;
+      --side: #101316; --side-text: #b7c0ca; --side-on: #272d34;
+      --accent: #4cc23a; --accent-soft: #1f3320; --link: #6cb6ff; --sel: #1f3348; --neg: #ff8a7a;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  header h1 { font-size: 16px; margin: 0; }
-  header .file { color: var(--muted); }
-  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
-  nav button { border: 0; background: none; color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
-  nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-  .panel h3 { margin-top: 0; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  #app { display: flex; height: 100vh; }
+  #side { width: 200px; flex: none; background: var(--side); color: var(--side-text); display: flex; flex-direction: column; padding: 10px 0; }
+  #side .brand { font-weight: 700; font-size: 15px; color: #fff; padding: 6px 16px 2px; }
+  #side .file { font-size: 12px; padding: 0 16px 12px; opacity: .8; word-break: break-all; }
+  #side button { all: unset; cursor: pointer; padding: 9px 16px; display: flex; gap: 10px; align-items: center; }
+  #side button:hover { background: var(--side-on); }
+  #side button.on { background: var(--side-on); color: #fff; box-shadow: inset 3px 0 0 var(--accent); }
+  #side button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  #side .sep { height: 1px; background: rgba(255,255,255,.08); margin: 8px 0; }
+  #side .bottom { margin-top: auto; }
+  .ico { width: 18px; text-align: center; opacity: .9; }
+  #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .titlebar { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 18px; display: flex; align-items: center; gap: 12px; }
+  .titlebar h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  .content { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
   .hidden { display: none !important; }
-  #drop { text-align: center; padding: 80px 20px; border: 2px dashed var(--line); border-radius: 14px; background: var(--panel); margin-top: 20px; }
-  #drop.over, body.over #drop { border-color: var(--accent); background: var(--accent-soft); }
-  #drop h2 { font-size: 22px; margin: 0 0 8px; }
-  #drop p { color: var(--muted); max-width: 620px; margin: 8px auto; }
-  .big { font-size: 15px; padding: 10px 18px !important; }
-  .progress { max-width: 420px; height: 8px; margin: 12px auto 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
-  #progBar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
-  .spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin: 16px auto; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  .tile .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  .tile .v { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
-  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  td { white-space: nowrap; }
-  td.wrap { white-space: normal; min-width: 260px; }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; white-space: nowrap; }
-  th.num, td.num { text-align: right; }
-  tbody tr:hover { background: var(--accent-soft); }
-  tr.click { cursor: pointer; }
-  .neg { color: var(--neg); }
-  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
-  .warn { color: var(--warn); }
-  .bar { height: 8px; background: var(--accent); border-radius: 4px; min-width: 2px; }
-  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
-  .controls label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
-  input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
-  button.btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
-  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .scroll { overflow: auto; max-height: 68vh; }
-  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 10px; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .pad { padding: 14px; }
+  h3 { margin: 0 0 10px; font-size: 14px; }
   .muted { color: var(--muted); }
-  .name { font-weight: 600; }
-  .detail-text { color: var(--muted); }
-  #detail { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); padding: 20px; overflow: auto; }
-  #detail h2 { margin-top: 0; font-size: 18px; }
-  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
-  dt { color: var(--muted); }
-  dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .neg { color: var(--neg); }
+  a, .link { color: var(--link); cursor: pointer; text-decoration: none; }
+  code { background: var(--row); padding: 1px 5px; border-radius: 4px; }
+
+  /* loader */
+  #loader { height: 100%; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  #drop { text-align: center; padding: 70px 30px; border: 2px dashed var(--line); border-radius: 12px; background: var(--panel); max-width: 680px; width: 100%; }
+  body.over #drop { border-color: var(--accent); background: var(--accent-soft); }
+  #drop h2 { margin: 0 0 8px; font-size: 22px; }
+  #drop p { color: var(--muted); margin: 8px auto; max-width: 560px; }
+  .progress { max-width: 420px; height: 8px; margin: 14px auto 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  #progBar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
   .err { color: var(--neg); white-space: pre-wrap; }
-  @media (max-width: 640px) { main { padding: 12px; } nav { margin-left: 0; } }
+
+  /* controls */
+  input, select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; }
+  .btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.big { font-size: 15px; padding: 10px 20px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .toolbar .grow { flex: 1; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 10px; white-space: nowrap; }
+  th { position: sticky; top: 0; z-index: 1; background: var(--row); color: var(--muted); font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; }
+  tbody tr:nth-child(even) { background: var(--row); }
+  tbody tr.click { cursor: pointer; }
+  tbody tr.click:hover { background: var(--sel); }
+  tbody tr.sel { background: var(--sel) !important; }
+  td.num, th.num { text-align: right; }
+  td.wrap { white-space: normal; }
+  tfoot td { border-top: 2px solid var(--line); font-weight: 600; background: var(--panel); position: sticky; bottom: 0; }
+  .tablewrap { overflow: auto; }
+
+  /* centers */
+  .center { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 12px; height: 100%; min-height: 480px; }
+  .center > .panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .toolbar select { max-width: 100%; }
+  .center .tablewrap { flex: 1; min-height: 0; }
+  .info { padding: 14px; border-bottom: 1px solid var(--line); display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .info h2 { margin: 0 0 4px; font-size: 18px; }
+  .kv { display: grid; grid-template-columns: max-content auto; gap: 2px 12px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .tabs button { all: unset; cursor: pointer; padding: 8px 12px; color: var(--muted); }
+  .tabs button.on { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+
+  /* home */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .tile { padding: 12px 14px; }
+  .tile .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .tile .v { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+  .bar { height: 10px; background: var(--accent); border-radius: 3px; min-width: 2px; }
+  .warnbox { background: #fff4d6; color: #5c4400; border: 1px solid #f0d58a; border-radius: 6px; padding: 9px 12px; margin-bottom: 12px; }
+  @media (prefers-color-scheme: dark) { .warnbox { background: #3a2f12; color: #f3dc9c; border-color: #6b5520; } }
+  .tag { display: inline-block; padding: 0 7px; border-radius: 9px; background: var(--accent-soft); font-size: 12px; }
+
+  #detail { position: fixed; top: 0; right: 0; bottom: 0; width: min(580px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.15); padding: 18px; overflow: auto; z-index: 5; }
+  #detail h2 { margin: 0; font-size: 18px; }
+
+  @media (max-width: 860px) {
+    #app { flex-direction: column; height: auto; min-height: 100vh; }
+    #side { width: auto; flex-direction: row; overflow-x: auto; padding: 0; }
+    #side .brand, #side .file, #side .sep { display: none; }
+    #side .bottom { margin-top: 0; }
+    .center { grid-template-columns: 1fr; height: auto; }
+    .center .tablewrap { max-height: 50vh; }
+    .grid2 { grid-template-columns: 1fr; }
+    .content { padding: 10px; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>QBW Viewer</h1>
-  <span class="file" id="fileName"></span>
-  <nav id="tabs" class="hidden">
-    <button data-tab="overview" class="on">Overview</button>
-    <button data-tab="names">Vendors &amp; lists</button>
-    <button data-tab="search">Search everything</button>
-    <button class="btn" id="openAnother">Open another file</button>
+<div id="app">
+  <nav id="side" class="hidden" aria-label="Main">
+    <div class="brand">QBW Viewer</div>
+    <div class="file" id="fileName"></div>
+    <button data-view="home" class="on"><span class="ico">⌂</span>Home</button>
+    <div class="sep"></div>
+    <button data-view="vendors"><span class="ico">⇄</span>Vendors</button>
+    <button data-view="customers"><span class="ico">☺</span>Customers</button>
+    <button data-view="employees"><span class="ico">⚇</span>Employees</button>
+    <button data-view="others"><span class="ico">◌</span>Other names</button>
+    <div class="sep"></div>
+    <button data-view="accounts"><span class="ico">≡</span>Chart of Accounts</button>
+    <button data-view="journal"><span class="ico">☰</span>Transactions</button>
+    <button data-view="lists"><span class="ico">▤</span>Lists</button>
+    <button data-view="search"><span class="ico">⌕</span>Search</button>
+    <div class="bottom"><button id="openAnother"><span class="ico">⇪</span>Open another file</button></div>
   </nav>
-</header>
 
-<main>
-  <section id="loader">
-    <div id="drop">
-      <h2>Drop your QuickBooks file here</h2>
-      <p>Drag a <code>.qbw</code> company file anywhere onto this page, or choose it below.
-         It is read entirely inside your browser; nothing is uploaded and the file is not changed.</p>
-      <p><button class="btn primary big" id="chooseBtn">Choose .qbw file…</button></p>
-      <input type="file" id="picker" accept=".qbw,.QBW" class="hidden">
-      <div id="busy" class="hidden">
-        <div class="spinner"></div>
-        <p id="busyMsg">Reading…</p>
-        <div class="progress"><div id="progBar"></div></div>
-        <p id="progMsg" class="muted"></p>
-      </div>
-      <p id="loadMsg"></p>
-    </div>
-  </section>
+  <div id="main">
+    <div class="titlebar hidden" id="titlebar"><h1 id="viewTitle">Home</h1><span class="muted" id="viewSub"></span></div>
+    <div class="content">
+      <section id="loader">
+        <div id="drop">
+          <h2>Drop your QuickBooks file here</h2>
+          <p>Drag a <code>.qbw</code> company file anywhere onto this page, or choose it below.
+             It is read entirely inside your browser: nothing is uploaded and the file is not changed.</p>
+          <p><button class="btn primary big" id="chooseBtn">Choose .qbw file…</button></p>
+          <input type="file" id="picker" accept=".qbw,.QBW" class="hidden">
+          <div id="busy" class="hidden">
+            <p id="busyMsg">Reading…</p>
+            <div class="progress"><div id="progBar"></div></div>
+            <p id="progMsg" class="muted"></p>
+          </div>
+          <p id="loadMsg"></p>
+        </div>
+      </section>
 
-  <section id="overview" class="hidden">
-    <div class="tiles" id="tiles"></div>
-    <div class="panel">
-      <h3>Most-used vendors</h3>
-      <p class="muted" style="margin-top:-8px">How many records in the file mention each vendor by name (bills, checks, card charges, payments…).</p>
-      <div class="scroll"><table id="topVendors"></table></div>
-    </div>
-    <div class="panel">
-      <h3>Lists found</h3>
-      <div class="scroll"><table id="listSummary"></table></div>
-    </div>
-    <p class="muted">Pages are unlocked with <a href="https://github.com/Sigilweaver/OpenQBW">OpenQBW</a>'s open-source key recovery.
-      Names, dates added and mentions are read directly from the file's list records. Transaction amounts and dates are not decoded yet.</p>
-  </section>
+      <section id="v-home" class="hidden">
+        <div class="warnbox"><b>Amounts are unverified.</b> Names, dates and accounts read reliably, but this file stores money in a format that was decoded by trial and error. Some amounts may be off (for example by a factor of 100). Check figures in QuickBooks before relying on them.</div>
+        <div class="tiles" id="tiles"></div>
+        <div class="grid2">
+          <div class="panel pad"><h3>Money in and out by year</h3><div class="tablewrap"><table id="byYear"></table></div></div>
+          <div class="panel pad"><h3>Top vendors by amount</h3><div class="tablewrap"><table id="topVendors"></table></div></div>
+          <div class="panel pad"><h3>Transactions by type</h3><div class="tablewrap"><table id="byType"></table></div></div>
+          <div class="panel pad"><h3>Most recent transactions</h3><div class="tablewrap"><table id="recent"></table></div></div>
+        </div>
+        <p class="muted" style="margin-top:14px">Decoded from the company file by reverse engineering. Amounts and dates are read from the transaction lines;
+          transaction types are inferred, and a small share of records could not be read. Check important figures in QuickBooks.</p>
+      </section>
 
-  <section id="names" class="hidden">
-    <div class="panel">
-      <div class="controls">
-        <label>List <select id="nList"></select></label>
-        <label>Search <input type="search" id="nSearch" placeholder="Name…" style="width:240px"></label>
-        <label>Sort <select id="nSort">
-          <option value="name">Name A–Z</option>
-          <option value="uses">Most mentioned</option>
-          <option value="added">Newest first</option>
-        </select></label>
-        <button class="btn primary" id="nCsv" style="margin-left:auto">Export CSV</button>
-      </div>
-      <div class="muted" id="nInfo"></div>
-      <div class="scroll"><table id="nGrid"></table></div>
-      <div class="pager"><button class="btn" id="nPrev">‹ Prev</button><span id="nPage"></span><button class="btn" id="nNext">Next ›</button></div>
-    </div>
-    <p class="muted">List names are recognised from the content, so a label can occasionally be off. Pick another list above if needed.
-      Click a name to see the records that mention it.</p>
-  </section>
+      <section id="v-center" class="hidden">
+        <div class="center">
+          <div class="panel">
+            <div class="toolbar"><input type="search" id="cSearch" placeholder="Search names…" class="grow" aria-label="Search names">
+              <select id="cSort" aria-label="Sort"><option value="name">A–Z</option><option value="amt">Largest amount</option><option value="n">Most transactions</option><option value="recent">Most recent</option></select></div>
+            <div class="tablewrap"><table id="cList"></table></div>
+          </div>
+          <div class="panel" id="cDetail"></div>
+        </div>
+      </section>
 
-  <section id="search" class="hidden">
-    <div class="panel">
-      <div class="controls">
-        <label>Search all readable text <input type="search" id="aSearch" placeholder="Type at least 2 characters…" style="width:340px"></label>
-        <button class="btn primary" id="aCsv" style="margin-left:auto">Export CSV</button>
-      </div>
-      <div class="muted" id="aInfo"></div>
-      <div class="scroll"><table id="aGrid"></table></div>
-      <div class="pager"><button class="btn" id="aPrev">‹ Prev</button><span id="aPage"></span><button class="btn" id="aNext">Next ›</button></div>
-    </div>
-  </section>
-</main>
+      <section id="v-accounts" class="hidden">
+        <div class="center">
+          <div class="panel">
+            <div class="toolbar"><input type="search" id="aSearch" placeholder="Search accounts…" class="grow" aria-label="Search accounts"></div>
+            <div class="tablewrap"><table id="aList"></table></div>
+          </div>
+          <div class="panel" id="aDetail"></div>
+        </div>
+      </section>
 
-<aside id="detail" class="hidden"></aside>
+      <section id="v-journal" class="hidden">
+        <div class="panel" style="display:flex;flex-direction:column;height:100%">
+          <div class="toolbar">
+            <select id="jType" aria-label="Type"></select>
+            <select id="jRange" aria-label="Dates"></select>
+            <input type="date" id="jFrom" aria-label="From"> <input type="date" id="jTo" aria-label="To">
+            <input type="search" id="jText" placeholder="Name, account…" aria-label="Search">
+            <input type="number" id="jMin" placeholder="Min amount" step="0.01" style="width:110px" aria-label="Minimum amount">
+            <span class="grow"></span>
+            <span class="muted" id="jInfo"></span>
+            <button class="btn" id="jCsv">Export CSV</button>
+          </div>
+          <div class="tablewrap" style="flex:1"><table id="jTable"></table></div>
+        </div>
+      </section>
+
+      <section id="v-lists" class="hidden">
+        <div class="panel" style="display:flex;flex-direction:column;height:100%">
+          <div class="toolbar"><select id="lList" aria-label="List"></select><input type="search" id="lSearch" placeholder="Search…" aria-label="Search"><span class="grow"></span><button class="btn" id="lCsv">Export CSV</button></div>
+          <div class="tablewrap" style="flex:1"><table id="lTable"></table></div>
+        </div>
+      </section>
+
+      <section id="v-search" class="hidden">
+        <div class="panel" style="display:flex;flex-direction:column;height:100%">
+          <div class="toolbar"><input type="search" id="sText" placeholder="Search every readable record (2+ characters)…" class="grow" aria-label="Search"><span class="muted" id="sInfo"></span></div>
+          <div class="tablewrap" style="flex:1"><table id="sTable"></table></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<aside id="detail" class="hidden" aria-live="polite"></aside>
 
 <script id="worker-src" type="text/plain">
 // Runs the WebAssembly reader off the main thread so the page stays responsive.
@@ -183,14 +252,20 @@ self.onmessage = async (e) => {
 
 <script>
 "use strict";
-const PAGE = 200;
 const $ = (id) => document.getElementById(id);
-let data = null, lists = [], mentions = new Map(), textRows = [];
-const pages = { names: 0, all: 0 };
+const MAX_ROWS = 1500;
+let data = null, txns = [], names = new Map(), accounts = new Map(), lists = [], textRows = [];
+let view = "home", centerKind = "vendors", centerSel = null, acctSel = null;
+const fmtMoney = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
 const fmtInt = new Intl.NumberFormat();
-const fmtDate = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
-function esc(v) { return String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function added(c) { return c > 946684800 && c < 4102444800 ? new Date(c * 1000) : null; }
+const fmtDate = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "UTC" });
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const money = (v) => v == null ? '<span class="muted">—</span>' : `<span class="${v < 0 ? "neg" : ""}">${fmtMoney.format(v)}</span>`;
+const dayToDate = (d) => new Date(d * 86400000);
+const iso = (d) => dayToDate(d).toISOString().slice(0, 10);
+const added = (c) => c > 946684800 && c < 4102444800 ? new Date(c * 1000) : null;
+const KIND = { 0: "customers", 1: "vendors", 2: "employees", 3: "others" };
+const CENTER_TITLE = { vendors: "Vendor Center", customers: "Customer Center", employees: "Employee Center", others: "Other Names" };
 
 function downloadCsv(name, cols, rows) {
   const cell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -202,20 +277,17 @@ function downloadCsv(name, cols, rows) {
 }
 
 // ---------- loading ----------
-const STEPS = { 1: "Unlocking pages", 2: "Reading names and records" };
+const STEPS = { 1: "Unlocking pages", 2: "Reading names and transactions" };
 let startedAt = 0;
 function onProgress(step, done, total) {
-  const [from, to] = { 1: [0, 88], 2: [88, 100] }[step];
+  const [from, to] = { 1: [0, 85], 2: [85, 100] }[step];
   const pct = from + (to - from) * (total ? done / total : 1);
   $("progBar").style.width = pct.toFixed(1) + "%";
-  const secs = Math.round((Date.now() - startedAt) / 1000);
-  $("progMsg").textContent = `Step ${step} of 2: ${STEPS[step]}… ${Math.round(pct)}% · ${secs}s elapsed`;
+  $("progMsg").textContent = `Step ${step} of 2: ${STEPS[step]}… ${Math.round(pct)}% · ${Math.round((Date.now() - startedAt) / 1000)}s elapsed`;
 }
-
 function decode(buffer) {
   return new Promise((resolve, reject) => {
-    const src = $("worker-src").textContent;
-    const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+    const url = URL.createObjectURL(new Blob([$("worker-src").textContent], { type: "text/javascript" }));
     let worker;
     try { worker = new Worker(url); } catch (e) { reject(new Error("Your browser blocked the background reader: " + e.message)); return; }
     worker.onmessage = (e) => {
@@ -227,239 +299,370 @@ function decode(buffer) {
     worker.postMessage(buffer, [buffer]);
   });
 }
-
 async function openFile(file) {
   if (!file) return;
   $("loadMsg").textContent = "";
   if (/\.(qbb|qbm|qbx|tlg|nd)$/i.test(file.name)) {
-    $("loadMsg").innerHTML = `<span class="err">${esc(file.name)} is a backup/support file. Please drop the company file ending in <code>.qbw</code>.</span>`;
+    $("loadMsg").innerHTML = `<span class="err">${esc(file.name)} is a backup/support file. Please use the company file ending in <code>.qbw</code>.</span>`;
     return;
   }
+  showLoader();
   $("busy").classList.remove("hidden");
   $("busyMsg").textContent = `Reading ${file.name} (${(file.size / 1048576).toFixed(1)} MB)…`;
-  startedAt = Date.now();
-  $("progBar").style.width = "0%";
-  $("progMsg").textContent = "Starting…";
+  startedAt = Date.now(); $("progBar").style.width = "0%"; $("progMsg").textContent = "Starting…";
   try {
     const result = await decode(await file.arrayBuffer());
     if (result.error) throw new Error(result.error);
     data = result;
     $("fileName").textContent = file.name;
-    show();
+    build();
+    $("loader").classList.add("hidden");
+    $("side").classList.remove("hidden"); $("titlebar").classList.remove("hidden");
+    go("home");
   } catch (e) {
     $("loadMsg").innerHTML = `<span class="err">Could not read this file: ${esc(e.message)}</span>`;
-  } finally {
-    $("busy").classList.add("hidden");
-  }
+  } finally { $("busy").classList.add("hidden"); }
 }
-
+function showLoader() {
+  for (const s of document.querySelectorAll("section")) s.classList.add("hidden");
+  $("loader").classList.remove("hidden"); $("detail").classList.add("hidden");
+}
 $("chooseBtn").onclick = () => $("picker").click();
 $("picker").onchange = (e) => openFile(e.target.files[0]);
 $("openAnother").onclick = () => { $("picker").value = ""; $("picker").click(); };
 document.addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("over"); });
 document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("over"); });
-document.addEventListener("drop", (e) => {
-  e.preventDefault(); document.body.classList.remove("over");
-  const f = e.dataTransfer.files[0];
-  if (f) { if (data) { $("loader").classList.remove("hidden"); hideTabs(); } openFile(f); }
-});
-
-const SECTIONS = ["overview", "names", "search"];
-function hideTabs() { for (const s of SECTIONS) $(s).classList.add("hidden"); }
-function selectTab(t) {
-  for (const b of $("tabs").querySelectorAll("[data-tab]")) b.classList.toggle("on", b.dataset.tab === t);
-  for (const s of SECTIONS) $(s).classList.toggle("hidden", s !== t);
-  $("detail").classList.add("hidden");
-}
-$("tabs").addEventListener("click", (e) => { if (e.target.dataset.tab) selectTab(e.target.dataset.tab); });
+document.addEventListener("drop", (e) => { e.preventDefault(); document.body.classList.remove("over"); if (e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]); });
 
 // ---------- model ----------
-// Rows of one QuickBooks list share a column bitmap (`g`). Name the lists
-// from what they contain.
+// Transaction type from the header's column bitmap (third byte), the kind of
+// name on it and its accounts. Inferred from one company file; see wasm/src/lib.rs.
+function txnType(t) {
+  const fam = parseInt(t.t.slice(4, 6), 16) || 0;
+  const accts = t.l.map((l) => l[0] || "").join("|");
+  if (/Accounts Receiv/i.test(accts)) return "Payment";
+  const hi = fam & 0xf0, lo = fam & 0x0f;
+  if (hi === 0x90 || hi === 0xf0 || hi === 0xb0) return t.kind === 0 ? "Invoice" : "Sales";
+  if (hi === 0x80) return lo === 1 && !t.name ? "Deposit" : "Check";
+  if (hi === 0xe0) return lo === 1 && !t.name ? "Deposit" : "Credit Card Charge";
+  return "Other";
+}
+
 function labelLists(entries) {
   const groups = new Map();
-  for (const e of entries) {
-    if (!groups.has(e.g)) groups.set(e.g, []);
-    groups.get(e.g).push(e);
-  }
+  for (const e of entries) { if (!groups.has(e.g)) groups.set(e.g, []); groups.get(e.g).push(e); }
   const share = (v, re) => v.filter((e) => re.test(e.n)).length / v.length;
-  const out = [];
-  for (const [g, v] of groups) out.push({ g, entries: v });
-  out.sort((a, b) => b.entries.length - a.entries.length);
-  // The biggest list of mostly non-address names is the vendor list; lists
-  // whose bitmap differs only in its first byte(s) are the same table.
-  const vendor = out.find((l) => l.entries.length >= 20 && share(l.entries, /^\d/) < 0.3 &&
-    share(l.entries, /(Expense|Income|Payable|Receivable|Profit|Balance Sheet|Net \d+)/i) < 0.2);
+  const out = [...groups].map(([g, entries]) => ({ g, entries })).sort((a, b) => b.entries.length - a.entries.length);
+  const vendor = out.find((l) => l.entries.length >= 20 && share(l.entries, /^\d/) < 0.3 && share(l.entries, /(Expense|Income|Payable|Receivable|Profit|Balance Sheet|Net \d+)/i) < 0.2);
   const final = [];
   for (const l of out) {
     const v = l.entries;
-    let label;
-    if (vendor && l !== vendor && l.g.length >= 4 && (vendor.g.endsWith(l.g) || l.g.endsWith(vendor.g))) {
-      vendor.entries.push(...v); continue;
-    }
+    if (vendor && l !== vendor && l.g.length >= 4 && (vendor.g.endsWith(l.g) || l.g.endsWith(vendor.g))) { vendor.entries.push(...v); continue; }
+    let label = null;
     if (l === vendor) label = "Vendors";
+    else if (v.length < 5) label = null;
     else if (v.some((e) => /^(Net \d+|Due on receipt|\d+% \d+ Net \d+)$/i.test(e.n))) label = "Payment terms";
     else if (share(v, /(Profit & Loss|Balance Sheet|Aging|Summary|Detail|Payroll|Ledger|Trial Balance|Journal|Open Invoices|Job )/i) >= 0.3) label = "Memorized reports";
     else if (share(v, /(Expense|Income|Payable|Receivable|Equity|Depreciation|Insurance|Subscriptions|Education|Licenses|Fees|Interest|Cost of|Reproduction|Supplies|Utilities|Rent)/i) >= 0.4) label = "Accounts";
     else if (share(v, /(Receipt|Estimate|Invoice|Order|Statement|Packing|Credit Memo|Sales)/i) >= 0.4) label = "Forms & templates";
     else if (v.length >= 10 && share(v, /^\d/) >= 0.5) label = "Customers, jobs & properties";
     else if (v.length >= 10) label = `Other list (${v[0].n}…)`;
-    else label = null; // tiny lists are usually stray rows; keep them under "Other names"
-    if (v.length < 5 && l !== vendor) label = null;
     final.push({ ...l, label });
   }
-  const strays = final.filter((l) => !l.label);
-  const named = final.filter((l) => l.label);
+  const strays = final.filter((l) => !l.label), named = final.filter((l) => l.label);
   if (strays.length) named.push({ g: "_other", label: "Other names", entries: strays.flatMap((l) => l.entries) });
-  // Number duplicate labels.
   const seen = new Map();
-  for (const l of named) {
-    const c = (seen.get(l.label) || 0) + 1; seen.set(l.label, c);
-    if (c > 1) l.label += ` (${c})`;
-  }
+  for (const l of named) { const c = (seen.get(l.label) || 0) + 1; seen.set(l.label, c); if (c > 1) l.label += ` (${c})`; }
   for (const l of named) l.entries.sort((a, b) => a.n.localeCompare(b.n));
   return named;
 }
 
-function buildModel() {
-  textRows = (data.text || []).map(([page, isList, strings]) => ({ page, isList, strings, search: strings.join(" · ").toLowerCase() }));
-  const entries = (data.lists || []).filter((e) => e.n);
-  // A name "mentioned" in a record = the exact name appears as a field of a
-  // non-list row (transactions store names as text).
-  const names = new Set(entries.map((e) => e.n));
-  mentions = new Map();
-  textRows.forEach((r, i) => {
-    if (r.isList) return;
-    for (const s of new Set(r.strings)) if (names.has(s)) {
-      if (!mentions.has(s)) mentions.set(s, []);
-      mentions.get(s).push(i);
+function nameRec(n, kind) {
+  if (!names.has(n)) names.set(n, { n, kinds: new Set(), txns: [], added: null, id: null, lists: new Set() });
+  const r = names.get(n);
+  if (kind != null) r.kinds.add(kind);
+  return r;
+}
+
+function build() {
+  textRows = (data.text || []).map(([page, isList, strings]) => ({ isList, strings, search: strings.join(" · ").toLowerCase() }));
+  lists = labelLists((data.lists || []).filter((e) => e.n));
+  names = new Map(); accounts = new Map();
+  for (const l of lists) for (const e of l.entries) {
+    const kind = /^Vendors/.test(l.label) ? "vendors" : /^Customers/.test(l.label) ? "customers" : /^(Other names|Other list)/.test(l.label) ? "others" : null;
+    if (/^Accounts/.test(l.label)) { acct(e.n).listed = true; continue; }
+    if (!kind) continue;
+    const r = nameRec(e.n, kind);
+    r.lists.add(l.label); r.added = r.added || added(e.c); r.id = r.id || e.id;
+  }
+  // Rows from imperfectly decoded pages yield one-off garbled account names
+  // ("Automobile Expenseable") with nonsense amounts; trust an account name
+  // only when it recurs, and drop such lines' amounts.
+  const acctUses = new Map();
+  for (const t of data.txns || []) for (const [a] of t.l) if (a) acctUses.set(a, (acctUses.get(a) || 0) + 1);
+  const goodName = (n) => n && !/^0{4}/.test(n);
+  txns = (data.txns || []).map((t, i) => {
+    t = { ...t, n: t.n.filter((x) => goodName(x[1])) };
+    const first = t.n[0];
+    const lines = t.l.filter(([a]) => a && (acctUses.get(a) || 0) >= 3 && goodName(a)).map(([a, v]) => ({ a, v }));
+    const vals = lines.filter((l) => l.v != null).map((l) => l.v);
+    const x = { i, t: t.t, d: t.d, date: iso(t.d), c: t.c, name: first ? first[1] : "", kind: first ? first[0] : null,
+      others: [...new Set(t.n.map((n) => n[1]))], l: t.l, lines,
+      amount: vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) * 100) / 100 : null };
+    x.type = txnType(x);
+    x.accts = [...new Set(lines.map((l) => l.a).filter(Boolean))];
+    return x;
+  }).sort((a, b) => b.d - a.d || b.c - a.c);
+  for (const t of txns) {
+    if (t.name) {
+      const r = nameRec(t.name, KIND[t.kind]);
+      r.txns.push(t);
     }
-  });
-  for (const e of entries) e.uses = (mentions.get(e.n) || []).length;
-  lists = labelLists(entries);
+    for (const l of t.lines) if (l.a) acct(l.a).rows.push({ t, v: l.v });
+  }
+  for (const r of names.values()) {
+    if (!r.kinds.size) r.kinds.add("others");
+    r.total = Math.round(r.txns.reduce((s, t) => s + (t.amount || 0), 0) * 100) / 100;
+    r.last = r.txns.length ? r.txns[0].d : null;
+  }
+  for (const a of accounts.values()) a.total = Math.round(a.rows.reduce((s, r) => s + (r.v || 0), 0) * 100) / 100;
+}
+function acct(n) {
+  if (!accounts.has(n)) accounts.set(n, { n, rows: [], listed: false });
+  return accounts.get(n);
 }
 
-function show() {
-  buildModel();
-  $("loader").classList.add("hidden");
-  $("tabs").classList.remove("hidden");
-  renderOverview();
-  initNames();
-  initSearch();
-  selectTab("overview");
+// ---------- navigation ----------
+const VIEWS = { home: "v-home", vendors: "v-center", customers: "v-center", employees: "v-center", others: "v-center", accounts: "v-accounts", journal: "v-journal", lists: "v-lists", search: "v-search" };
+$("side").addEventListener("click", (e) => { const b = e.target.closest("[data-view]"); if (b) go(b.dataset.view); });
+function go(v, opts = {}) {
+  view = v;
+  for (const b of $("side").querySelectorAll("[data-view]")) b.classList.toggle("on", b.dataset.view === v);
+  for (const s of document.querySelectorAll("section")) s.classList.toggle("hidden", s.id !== VIEWS[v]);
+  $("detail").classList.add("hidden");
+  const titles = { home: "Home", accounts: "Chart of Accounts", journal: "Transactions", lists: "Lists", search: "Search" };
+  $("viewTitle").textContent = CENTER_TITLE[v] || titles[v];
+  $("viewSub").textContent = "";
+  if (v === "home") renderHome();
+  else if (CENTER_TITLE[v]) { centerKind = v; centerSel = opts.select || null; $("cSearch").value = ""; renderCenterList(); renderCenterDetail(); }
+  else if (v === "accounts") { acctSel = opts.select || null; renderAcctList(); renderAcctDetail(); }
+  else if (v === "journal") initJournal(opts);
+  else if (v === "lists") renderLists(true);
+  else if (v === "search") { $("sText").focus(); renderSearch(); }
 }
 
-// ---------- overview ----------
-function renderOverview() {
-  const count = (re) => lists.filter((l) => re.test(l.label)).reduce((s, l) => s + l.entries.length, 0);
-  const tiles = [
-    ["Vendors", fmtInt.format(count(/^Vendors/))],
-    ["Customers, jobs & properties", fmtInt.format(count(/^Customers/))],
-    ["Accounts", fmtInt.format(count(/^Accounts/))],
-    ["Records with text", fmtInt.format(textRows.filter((r) => !r.isList).length)],
-    ["Pages unlocked", `${fmtInt.format(data.decoded_pages)} of ${fmtInt.format(data.pages)}`],
-  ];
-  $("tiles").innerHTML = tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+// ---------- home ----------
+function renderHome() {
+  const count = (k) => [...names.values()].filter((r) => r.kinds.has(k)).length;
+  const dates = txns.map((t) => t.d);
+  $("tiles").innerHTML = [
+    ["Vendors", fmtInt.format(count("vendors"))], ["Customers & jobs", fmtInt.format(count("customers"))],
+    ["Employees", fmtInt.format(count("employees"))], ["Transactions", fmtInt.format(txns.length)],
+    ["Dates", dates.length ? `${fmtDate.format(dayToDate(Math.min(...dates)))} – ${fmtDate.format(dayToDate(Math.max(...dates)))}` : "—"],
+  ].map(([k, v]) => `<div class="panel tile"><div class="k">${k}</div><div class="v" style="${k === "Dates" ? "font-size:15px" : ""}">${v}</div></div>`).join("");
 
-  const vendors = lists.filter((l) => /^Vendors/.test(l.label)).flatMap((l) => l.entries).sort((a, b) => b.uses - a.uses).slice(0, 25);
-  const max = Math.max(1, ...vendors.map((e) => e.uses));
-  $("topVendors").innerHTML = `<thead><tr><th>Vendor</th><th class="num">Mentions</th><th style="width:40%"></th><th>Added</th></tr></thead><tbody>` +
-    (vendors.map((e) => `<tr class="click" data-name="${esc(e.n)}"><td class="name">${esc(e.n)}</td><td class="num">${fmtInt.format(e.uses)}</td><td><div class="bar" style="width:${(e.uses / max) * 100}%"></div></td><td>${added(e.c) ? fmtDate.format(added(e.c)) : ""}</td></tr>`).join("") ||
-      `<tr><td colspan="4" class="muted">No vendor list was recognised. Check the Vendors &amp; lists tab.</td></tr>`) + "</tbody>";
-  $("listSummary").innerHTML = `<thead><tr><th>List</th><th class="num">Entries</th><th>Examples</th></tr></thead><tbody>` +
-    lists.map((l, i) => `<tr class="click" data-list="${i}"><td><span class="tag">${esc(l.label)}</span></td><td class="num">${fmtInt.format(l.entries.length)}</td><td class="wrap muted">${esc(l.entries.slice(0, 4).map((e) => e.n).join(", "))}</td></tr>`).join("") + "</tbody>";
-}
-$("topVendors").addEventListener("click", (e) => { const tr = e.target.closest("tr[data-name]"); if (tr) showMentions(tr.dataset.name); });
-$("listSummary").addEventListener("click", (e) => {
-  const tr = e.target.closest("tr[data-list]");
-  if (!tr) return;
-  $("nList").value = tr.dataset.list; $("nSearch").value = ""; selectTab("names"); renderNames(true);
-});
+  const years = new Map();
+  for (const t of txns) {
+    if (t.amount == null) continue;
+    const y = t.date.slice(0, 4), r = years.get(y) || { y, inn: 0, out: 0, n: 0 };
+    r.n++; if (t.amount < 0) r.out += t.amount; else r.inn += t.amount;
+    years.set(y, r);
+  }
+  const ys = [...years.values()].sort((a, b) => b.y.localeCompare(a.y));
+  $("byYear").innerHTML = `<thead><tr><th>Year</th><th class="num">Transactions</th><th class="num">Money in</th><th class="num">Money out</th></tr></thead><tbody>` +
+    ys.map((r) => `<tr class="click" data-year="${r.y}"><td>${r.y}</td><td class="num">${fmtInt.format(r.n)}</td><td class="num">${money(r.inn)}</td><td class="num">${money(r.out)}</td></tr>`).join("") + "</tbody>";
+  $("byYear").onclick = (e) => { const tr = e.target.closest("tr[data-year]"); if (tr) go("journal", { year: tr.dataset.year }); };
 
-// ---------- lists ----------
-function initNames() {
-  $("nList").innerHTML = lists.map((l, i) => `<option value="${i}">${esc(l.label)} (${fmtInt.format(l.entries.length)})</option>`).join("") ||
-    `<option value="">No lists found</option>`;
-  $("nList").onchange = $("nSearch").oninput = $("nSort").onchange = () => renderNames(true);
-  $("nPrev").onclick = () => { pages.names--; renderNames(); };
-  $("nNext").onclick = () => { pages.names++; renderNames(); };
-  $("nCsv").onclick = () => {
-    const l = lists[$("nList").value];
-    downloadCsv(`${l ? l.label : "names"}.csv`, ["name", "mentions", "added", "list_id"],
-      filteredNames().map((e) => ({ name: e.n, mentions: e.uses, added: added(e.c) ? added(e.c).toISOString().slice(0, 10) : "", list_id: e.id || "" })));
-  };
-  renderNames(true);
-}
-function filteredNames() {
-  const l = lists[$("nList").value];
-  if (!l) return [];
-  const q = $("nSearch").value.trim().toLowerCase();
-  const rows = l.entries.filter((e) => !q || e.n.toLowerCase().includes(q));
-  const sort = $("nSort").value;
-  if (sort === "uses") rows.sort((a, b) => b.uses - a.uses || a.n.localeCompare(b.n));
-  else if (sort === "added") rows.sort((a, b) => (b.c || 0) - (a.c || 0));
-  else rows.sort((a, b) => a.n.localeCompare(b.n));
-  return rows;
-}
-function renderNames(reset) {
-  if (reset) pages.names = 0;
-  const rows = filteredNames();
-  const n = Math.max(1, Math.ceil(rows.length / PAGE));
-  pages.names = Math.min(Math.max(0, pages.names), n - 1);
-  $("nInfo").textContent = `${fmtInt.format(rows.length)} entries`;
-  $("nGrid").innerHTML = `<thead><tr><th>Name</th><th class="num">Mentions</th><th>Added</th></tr></thead><tbody>` +
-    (rows.slice(pages.names * PAGE, (pages.names + 1) * PAGE).map((e) =>
-      `<tr class="click" data-name="${esc(e.n)}"><td class="name">${esc(e.n)}</td><td class="num">${e.uses ? fmtInt.format(e.uses) : '<span class="muted">0</span>'}</td><td>${added(e.c) ? fmtDate.format(added(e.c)) : '<span class="muted">—</span>'}</td></tr>`).join("") ||
-      `<tr><td colspan="3" class="muted">No entries.</td></tr>`) + "</tbody>";
-  $("nPage").textContent = `Page ${pages.names + 1} of ${n}`;
-  $("nPrev").disabled = pages.names === 0; $("nNext").disabled = pages.names >= n - 1;
-}
-$("nGrid").addEventListener("click", (e) => { const tr = e.target.closest("tr[data-name]"); if (tr) showMentions(tr.dataset.name); });
+  const vend = [...names.values()].filter((r) => r.kinds.has("vendors") && r.txns.length).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)).slice(0, 12);
+  const max = Math.max(1, ...vend.map((r) => Math.abs(r.total)));
+  $("topVendors").innerHTML = `<thead><tr><th>Vendor</th><th class="num">Amount</th><th style="width:35%"></th></tr></thead><tbody>` +
+    vend.map((r) => `<tr class="click" data-name="${esc(r.n)}"><td>${esc(r.n)}</td><td class="num">${money(r.total)}</td><td><div class="bar" style="width:${Math.abs(r.total) / max * 100}%"></div></td></tr>`).join("") + "</tbody>";
+  $("topVendors").onclick = (e) => { const tr = e.target.closest("tr[data-name]"); if (tr) go("vendors", { select: tr.dataset.name }); };
 
-function showMentions(name) {
-  const entry = lists.flatMap((l) => l.entries.map((e) => ({ e, label: l.label }))).find((x) => x.e.n === name);
-  const rows = (mentions.get(name) || []).map((i) => textRows[i]);
-  const shown = rows.slice(0, 300);
+  const types = new Map();
+  for (const t of txns) { const r = types.get(t.type) || { n: 0, amt: 0 }; r.n++; r.amt += t.amount || 0; types.set(t.type, r); }
+  $("byType").innerHTML = `<thead><tr><th>Type</th><th class="num">Count</th><th class="num">Amount</th></tr></thead><tbody>` +
+    [...types].sort((a, b) => b[1].n - a[1].n).map(([k, r]) => `<tr class="click" data-type="${esc(k)}"><td>${esc(k)}</td><td class="num">${fmtInt.format(r.n)}</td><td class="num">${money(Math.round(r.amt * 100) / 100)}</td></tr>`).join("") + "</tbody>";
+  $("byType").onclick = (e) => { const tr = e.target.closest("tr[data-type]"); if (tr) go("journal", { type: tr.dataset.type }); };
+
+  $("recent").innerHTML = txnTable(txns.slice(0, 12), ["date", "type", "name", "amount"]);
+  $("recent").onclick = onTxnClick;
+}
+
+// ---------- shared transaction table ----------
+const COLS = {
+  date: ["Date", (t) => fmtDate.format(dayToDate(t.d))],
+  type: ["Type", (t) => esc(t.type)],
+  name: ["Name", (t) => esc(t.name) || '<span class="muted">—</span>'],
+  account: ["Account", (t) => esc(t.accts.length > 1 ? "-SPLIT-" : t.accts[0] || "")],
+  amount: ["Amount", (t) => money(t.amount), true],
+};
+function txnTable(rows, cols, total) {
+  const head = cols.map((c) => `<th class="${COLS[c][2] ? "num" : ""}">${COLS[c][0]}</th>`).join("");
+  const body = rows.slice(0, MAX_ROWS).map((t) => `<tr class="click" data-txn="${t.i}">${cols.map((c) => `<td class="${COLS[c][2] ? "num" : ""}">${COLS[c][1](t)}</td>`).join("")}</tr>`).join("");
+  const more = rows.length > MAX_ROWS ? `<tr><td colspan="${cols.length}" class="muted">Showing ${fmtInt.format(MAX_ROWS)} of ${fmtInt.format(rows.length)}. Narrow the filters or export to CSV.</td></tr>` : "";
+  const foot = total ? `<tfoot><tr><td colspan="${cols.length - 1}">Total (${fmtInt.format(rows.length)})</td><td class="num">${money(Math.round(rows.reduce((s, t) => s + (t.amount || 0), 0) * 100) / 100)}</td></tr></tfoot>` : "";
+  return `<thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}" class="muted">No transactions.</td></tr>`}${more}</tbody>${foot}`;
+}
+function onTxnClick(e) { const tr = e.target.closest("tr[data-txn]"); if (tr) showTxn(txns.find((t) => t.i === +tr.dataset.txn)); }
+function showTxn(t) {
   $("detail").innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>${esc(name)}</h2><button class="btn" id="dClose">Close</button></div>
-    <dl>
-      ${entry ? `<dt>List</dt><dd>${esc(entry.label)}</dd>` : ""}
-      ${entry && added(entry.e.c) ? `<dt>Added</dt><dd>${fmtDate.format(added(entry.e.c))}</dd>` : ""}
-      <dt>Mentioned in</dt><dd>${fmtInt.format(rows.length)} records</dd>
-      ${entry && entry.e.d.length ? `<dt>Other text</dt><dd class="detail-text">${esc(entry.e.d.join(" · "))}</dd>` : ""}
-      ${entry && entry.e.id ? `<dt>QuickBooks ID</dt><dd><code>${esc(entry.e.id)}</code></dd>` : ""}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h2>${esc(t.type)}${t.name ? " · " + esc(t.name) : ""}</h2><button class="btn" id="dClose">Close</button></div>
+    <dl class="kv" style="margin:14px 0">
+      <dt>Date</dt><dd>${fmtDate.format(dayToDate(t.d))}</dd>
+      <dt>Amount</dt><dd>${money(t.amount)}</dd>
+      ${t.others.length ? `<dt>Names</dt><dd>${t.others.map((n) => `<a data-name="${esc(n)}">${esc(n)}</a>`).join(", ")}</dd>` : ""}
+      ${added(t.c) ? `<dt>Entered</dt><dd>${added(t.c).toLocaleString()}</dd>` : ""}
     </dl>
-    <h3>Records that mention it</h3>
-    <p class="muted">Readable fields of each record: typically the account, payee, job or property, and memo.</p>
-    ${shown.length ? `<table><tbody>` + shown.map((r) => `<tr><td class="wrap">${r.strings.map((s) => s === name ? `<b>${esc(s)}</b>` : esc(s)).join(' <span class="muted">·</span> ')}</td></tr>`).join("") + "</tbody></table>" : `<p class="muted">No other records mention this name.</p>`}
-    ${rows.length > shown.length ? `<p class="muted">Showing the first ${shown.length}. Use Search everything for the rest.</p>` : ""}`;
+    <h3>Splits</h3>
+    ${t.lines.length ? `<table><thead><tr><th>Account</th><th class="num">Amount</th></tr></thead><tbody>${t.lines.map((l) => `<tr><td>${l.a ? `<a data-acct="${esc(l.a)}">${esc(l.a)}</a>` : '<span class="muted">—</span>'}</td><td class="num">${money(l.v)}</td></tr>`).join("")}</tbody></table>`
+      : '<p class="muted">The lines of this transaction could not be read.</p>'}
+    <p class="muted" style="margin-top:14px">Only the splits that could be decoded are shown; the matching bank or card side is often not listed. Amounts are unverified.</p>`;
   $("detail").classList.remove("hidden");
   $("dClose").onclick = () => $("detail").classList.add("hidden");
 }
+$("detail").addEventListener("click", (e) => {
+  const n = e.target.closest("[data-name]"), a = e.target.closest("[data-acct]");
+  if (n) { const r = names.get(n.dataset.name); go(r ? [...r.kinds][0] : "vendors", { select: n.dataset.name }); }
+  if (a) go("accounts", { select: a.dataset.acct });
+});
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("detail").classList.add("hidden"); });
 
-// ---------- search ----------
-function initSearch() {
-  $("aSearch").oninput = () => renderSearch(true);
-  $("aPrev").onclick = () => { pages.all--; renderSearch(); };
-  $("aNext").onclick = () => { pages.all++; renderSearch(); };
-  $("aCsv").onclick = () => downloadCsv("search.csv", ["text"], filteredSearch().map((r) => ({ text: r.strings.join(" | ") })));
-  renderSearch(true);
+// ---------- centers ----------
+function centerRows() {
+  const q = $("cSearch").value.trim().toLowerCase();
+  const rows = [...names.values()].filter((r) => r.kinds.has(centerKind) && (!q || r.n.toLowerCase().includes(q)));
+  const s = $("cSort").value;
+  if (s === "amt") rows.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+  else if (s === "n") rows.sort((a, b) => b.txns.length - a.txns.length);
+  else if (s === "recent") rows.sort((a, b) => (b.last ?? -1) - (a.last ?? -1));
+  else rows.sort((a, b) => a.n.localeCompare(b.n));
+  return rows;
 }
-function filteredSearch() {
+function renderCenterList() {
+  const rows = centerRows();
+  if (!centerSel && rows.length) centerSel = rows[0].n;
+  $("viewSub").textContent = `${fmtInt.format(rows.length)} names`;
+  $("cList").innerHTML = `<thead><tr><th>Name</th><th class="num">Amount</th></tr></thead><tbody>` +
+    rows.slice(0, 3000).map((r) => `<tr class="click ${r.n === centerSel ? "sel" : ""}" data-name="${esc(r.n)}"><td>${esc(r.n)}</td><td class="num">${r.txns.length ? money(r.total) : ""}</td></tr>`).join("") + "</tbody>";
+  const sel = $("cList").querySelector("tr.sel"); if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+$("cSearch").oninput = $("cSort").onchange = () => renderCenterList();
+$("cList").onclick = (e) => { const tr = e.target.closest("tr[data-name]"); if (!tr) return; centerSel = tr.dataset.name; renderCenterList(); renderCenterDetail(); };
+let cTab = "txns";
+function renderCenterDetail() {
+  const r = names.get(centerSel);
+  if (!r) { $("cDetail").innerHTML = '<p class="pad muted">Select a name.</p>'; return; }
+  const types = [...new Set(r.txns.map((t) => t.type))].sort();
+  $("cDetail").innerHTML = `
+    <div class="info">
+      <div><h2>${esc(r.n)}</h2><div class="muted">${[...r.kinds].map((k) => CENTER_TITLE[k].replace(" Center", "")).join(", ")}</div></div>
+      <dl class="kv">
+        <dt>Transactions</dt><dd>${fmtInt.format(r.txns.length)}</dd>
+        <dt>Total</dt><dd>${money(r.total)}</dd>
+        ${r.added ? `<dt>Added</dt><dd>${fmtDate.format(r.added)}</dd>` : ""}
+        ${r.last != null ? `<dt>Last transaction</dt><dd>${fmtDate.format(dayToDate(r.last))}</dd>` : ""}
+      </dl>
+    </div>
+    <div class="warnbox" style="margin:12px 12px 0">Amounts are unverified and may be off. See Home.</div>
+    <div class="toolbar">
+      <select id="cdType" aria-label="Type"><option value="">All types</option>${types.map((t) => `<option>${esc(t)}</option>`).join("")}</select>
+      <select id="cdYear" aria-label="Year"><option value="">All dates</option>${[...new Set(r.txns.map((t) => t.date.slice(0, 4)))].map((y) => `<option>${y}</option>`).join("")}</select>
+      <span class="grow"></span><button class="btn" id="cdCsv">Export CSV</button>
+    </div>
+    <div class="tablewrap"><table id="cdTable"></table></div>`;
+  const draw = () => {
+    const ty = $("cdType").value, yr = $("cdYear").value;
+    const rows = r.txns.filter((t) => (!ty || t.type === ty) && (!yr || t.date.startsWith(yr)));
+    $("cdTable").innerHTML = txnTable(rows, ["type", "date", "account", "amount"], true);
+    return rows;
+  };
+  $("cdType").onchange = $("cdYear").onchange = draw;
+  $("cdTable").onclick = onTxnClick;
+  $("cdCsv").onclick = () => downloadCsv(`${r.n}.csv`, ["date", "type", "name", "account", "amount"], draw().map(csvRow));
+  draw();
+}
+const csvRow = (t) => ({ date: t.date, type: t.type, name: t.name, account: t.accts.join(" / "), amount: t.amount });
+
+// ---------- chart of accounts ----------
+function renderAcctList() {
   const q = $("aSearch").value.trim().toLowerCase();
-  return q.length < 2 ? [] : textRows.filter((r) => r.search.includes(q));
+  const rows = [...accounts.values()].filter((a) => !q || a.n.toLowerCase().includes(q)).sort((a, b) => a.n.localeCompare(b.n));
+  if (!acctSel && rows.length) acctSel = rows[0].n;
+  $("viewSub").textContent = `${fmtInt.format(rows.length)} accounts, jobs and classes used on transactions`;
+  $("aList").innerHTML = `<thead><tr><th>Name</th><th class="num">Total</th></tr></thead><tbody>` +
+    rows.map((a) => `<tr class="click ${a.n === acctSel ? "sel" : ""}" data-acct="${esc(a.n)}"><td>${esc(a.n)}</td><td class="num">${money(a.total)}</td></tr>`).join("") + "</tbody>";
+  const sel = $("aList").querySelector("tr.sel"); if (sel) sel.scrollIntoView({ block: "nearest" });
 }
-function renderSearch(reset) {
-  if (reset) pages.all = 0;
-  const rows = filteredSearch();
-  const n = Math.max(1, Math.ceil(rows.length / PAGE));
-  pages.all = Math.min(Math.max(0, pages.all), n - 1);
-  $("aInfo").textContent = rows.length ? `${fmtInt.format(rows.length)} matching records` : "Type a name, address, memo, account…";
-  $("aGrid").innerHTML = rows.length ? `<tbody>` +
-    rows.slice(pages.all * PAGE, (pages.all + 1) * PAGE).map((r) => `<tr><td class="wrap">${r.isList ? '<span class="tag">list</span> ' : ""}${r.strings.map(esc).join(' <span class="muted">·</span> ')}</td></tr>`).join("") + "</tbody>" : "";
-  $("aPage").textContent = `Page ${pages.all + 1} of ${n}`;
-  $("aPrev").disabled = pages.all === 0; $("aNext").disabled = pages.all >= n - 1;
+$("aSearch").oninput = () => renderAcctList();
+$("aList").onclick = (e) => { const tr = e.target.closest("tr[data-acct]"); if (!tr) return; acctSel = tr.dataset.acct; renderAcctList(); renderAcctDetail(); };
+function renderAcctDetail() {
+  const a = accounts.get(acctSel);
+  if (!a) { $("aDetail").innerHTML = '<p class="pad muted">Select an account.</p>'; return; }
+  const rows = [...a.rows].sort((x, y) => y.t.d - x.t.d);
+  $("aDetail").innerHTML = `<div class="info"><div><h2>${esc(a.n)}</h2><div class="muted">Register</div></div>
+      <dl class="kv"><dt>Entries</dt><dd>${fmtInt.format(rows.length)}</dd><dt>Total</dt><dd>${money(a.total)}</dd></dl></div>
+    <div class="toolbar"><span class="grow"></span><button class="btn" id="adCsv">Export CSV</button></div>
+    <div class="tablewrap"><table id="adTable"></table></div>`;
+  $("adTable").innerHTML = `<thead><tr><th>Date</th><th>Type</th><th>Name</th><th class="num">Amount</th></tr></thead><tbody>` +
+    rows.slice(0, MAX_ROWS).map((r) => `<tr class="click" data-txn="${r.t.i}"><td>${fmtDate.format(dayToDate(r.t.d))}</td><td>${esc(r.t.type)}</td><td>${esc(r.t.name)}</td><td class="num">${money(r.v)}</td></tr>`).join("") +
+    `</tbody><tfoot><tr><td colspan="3">Total</td><td class="num">${money(a.total)}</td></tr></tfoot>`;
+  $("adTable").onclick = onTxnClick;
+  $("adCsv").onclick = () => downloadCsv(`${a.n}.csv`, ["date", "type", "name", "amount"], rows.map((r) => ({ date: r.t.date, type: r.t.type, name: r.t.name, amount: r.v })));
+}
+
+// ---------- journal ----------
+function initJournal(opts) {
+  const types = [...new Set(txns.map((t) => t.type))].sort();
+  $("jType").innerHTML = `<option value="">All types</option>` + types.map((t) => `<option>${esc(t)}</option>`).join("");
+  const years = [...new Set(txns.map((t) => t.date.slice(0, 4)))].sort().reverse();
+  $("jRange").innerHTML = `<option value="">All dates</option>` + years.map((y) => `<option value="${y}">${y}</option>`).join("") + `<option value="custom">Custom…</option>`;
+  for (const id of ["jFrom", "jTo", "jText", "jMin"]) $(id).value = "";
+  $("jType").value = opts.type || ""; $("jRange").value = opts.year || "";
+  for (const id of ["jType", "jRange", "jFrom", "jTo", "jText", "jMin"]) $(id).oninput = renderJournal;
+  $("jCsv").onclick = () => downloadCsv("transactions.csv", ["date", "type", "name", "account", "amount"], journalRows().map(csvRow));
+  $("jTable").onclick = onTxnClick;
+  renderJournal();
+}
+function journalRows() {
+  const ty = $("jType").value, rg = $("jRange").value, q = $("jText").value.trim().toLowerCase();
+  const min = $("jMin").value === "" ? null : Math.abs(parseFloat($("jMin").value));
+  const from = rg === "custom" ? $("jFrom").value : "", to = rg === "custom" ? $("jTo").value : "";
+  $("jFrom").classList.toggle("hidden", rg !== "custom"); $("jTo").classList.toggle("hidden", rg !== "custom");
+  return txns.filter((t) => (!ty || t.type === ty) && (!rg || rg === "custom" || t.date.startsWith(rg)) &&
+    (!from || t.date >= from) && (!to || t.date <= to) &&
+    (!q || t.others.some((n) => n.toLowerCase().includes(q)) || t.accts.some((a) => a.toLowerCase().includes(q))) &&
+    (min == null || (t.amount != null && Math.abs(t.amount) >= min)));
+}
+function renderJournal() {
+  const rows = journalRows();
+  $("jInfo").textContent = `${fmtInt.format(rows.length)} transactions`;
+  $("jTable").innerHTML = txnTable(rows, ["date", "type", "name", "account", "amount"], true);
+}
+
+// ---------- lists ----------
+function renderLists(reset) {
+  if (reset) {
+    $("lList").innerHTML = lists.map((l, i) => `<option value="${i}">${esc(l.label)} (${fmtInt.format(l.entries.length)})</option>`).join("");
+    $("lList").onchange = $("lSearch").oninput = () => renderLists();
+    $("lCsv").onclick = () => { const l = lists[$("lList").value]; downloadCsv(`${l.label}.csv`, ["name", "added"], l.entries.map((e) => ({ name: e.n, added: added(e.c) ? added(e.c).toISOString().slice(0, 10) : "" }))); };
+  }
+  const l = lists[$("lList").value]; if (!l) return;
+  const q = $("lSearch").value.trim().toLowerCase();
+  const rows = l.entries.filter((e) => !q || e.n.toLowerCase().includes(q));
+  $("viewSub").textContent = `${fmtInt.format(rows.length)} entries`;
+  $("lTable").innerHTML = `<thead><tr><th>Name</th><th>Added</th><th class="num">Transactions</th></tr></thead><tbody>` +
+    rows.map((e) => { const r = names.get(e.n); return `<tr class="${r ? "click" : ""}" data-name="${esc(e.n)}"><td>${esc(e.n)}</td><td>${added(e.c) ? fmtDate.format(added(e.c)) : ""}</td><td class="num">${r ? fmtInt.format(r.txns.length) : ""}</td></tr>`; }).join("") + "</tbody>";
+}
+$("lTable").onclick = (e) => { const tr = e.target.closest("tr.click[data-name]"); if (tr) { const r = names.get(tr.dataset.name); go([...r.kinds][0], { select: r.n }); } };
+
+// ---------- search ----------
+$("sText").oninput = () => renderSearch();
+function renderSearch() {
+  const q = $("sText").value.trim().toLowerCase();
+  const rows = q.length < 2 ? [] : textRows.filter((r) => r.search.includes(q));
+  $("sInfo").textContent = q.length < 2 ? "" : `${fmtInt.format(rows.length)} records`;
+  $("sTable").innerHTML = rows.length ? "<tbody>" + rows.slice(0, MAX_ROWS).map((r) => `<tr><td class="wrap">${r.strings.map(esc).join(' <span class="muted">·</span> ')}</td></tr>`).join("") + "</tbody>" : "";
 }
 </script>
 </body>

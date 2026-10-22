@@ -9,11 +9,15 @@ Open a QuickBooks Desktop company file (`.qbw`) **without QuickBooks**: open
 
 ## What you can see
 
-- **Overview**: vendor, customer/job and account counts, the most-used vendors, and every list found
-- **Vendors & lists**: vendors, customers/jobs/properties, accounts, payment terms, memorized reports and
-  other lists, with the date each entry was added and how many records mention it. Click a name to see
-  those records: the account, payee, job or property and memo of each. CSV export.
-- **Search everything**: full-text search over every readable record in the file
+A QuickBooks-style layout with a sidebar:
+
+- **Home**: counts, money in and out by year, top vendors, transactions by type, most recent transactions
+- **Vendor, Customer and Employee Centers, plus Other Names**: pick a name to see its transactions (type, date,
+  account, amount) with totals, filters and CSV export
+- **Chart of Accounts**: every account, job and class used on transactions, each with its register
+- **Transactions**: the full journal, filterable by type, year or date range, name/account and amount
+- **Lists**: vendors, customers/jobs, accounts, terms, memorized reports and other lists, with dates added
+- **Search**: full-text search over every readable record
 
 ## How it works
 
@@ -24,14 +28,18 @@ Open a QuickBooks Desktop company file (`.qbw`) **without QuickBooks**: open
 2. List records (vendors, customers, accounts…) are read directly. They share one row layout
    (two timestamp blocks, the length-prefixed name, the ListID and a GUID), and the row's column bitmap
    tells the lists apart. See the comments at the top of `wasm/src/lib.rs`.
-3. Transactions store names as text, so "mentions" counts the records containing a name exactly.
+3. Transactions are read from their header rows (key, entry time, transaction date as minutes since
+   1600-02-29, names) and line rows (account and amount). The transaction type (check, credit card charge,
+   deposit, invoice, payment) is inferred from the header's column bitmap and accounts.
 
 Everything is compiled to WebAssembly and embedded in the HTML page.
 
 ## Limitations
 
-- **Transaction amounts and dates are not decoded yet.** OpenQBW's transaction decoding and table map
-  were built from older sample files and don't match newer company files, so they are not used.
+- **Amounts are unverified.** The decimal format was worked out by trial and error. It reads gas and supply
+  purchases plausibly, but some amounts may be off (for example by a factor of 100). Check figures in QuickBooks.
+- Often only some of a transaction's lines are decoded (e.g. the expense side, not the bank side).
+- Transaction types are inferred; a few hundred show as "Other".
 - List labels ("Vendors", "Accounts"…) are inferred from the contents; pick another list if one looks off.
 - Pages the cheaper key checks can't unlock are skipped. On the files examined they held no readable data.
 - Password-protected files cannot be opened.
