@@ -1,5 +1,4 @@
-vendor/
-exports/
 *.qbw
 *.sqlite
 __pycache__/
+wasm/target/

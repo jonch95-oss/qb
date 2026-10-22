@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QBW Viewer</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #677085; --line: #e2e5eb;
+    --accent: #2f6fdf; --accent-soft: #e8f0fd; --neg: #c0392b; --warn: #a86b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1c2027; --text: #e6e9ef; --muted: #98a1b3; --line: #2c323c;
+      --accent: #6b9cff; --accent-soft: #233150; --neg: #ff7a6b; --warn: #e0a940;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  header .file { color: var(--muted); }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button { border: 0; background: none; color: var(--muted); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+  nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .panel h3 { margin-top: 0; }
+  .hidden { display: none !important; }
+  #drop { text-align: center; padding: 80px 20px; border: 2px dashed var(--line); border-radius: 14px; background: var(--panel); margin-top: 20px; }
+  #drop.over, body.over #drop { border-color: var(--accent); background: var(--accent-soft); }
+  #drop h2 { font-size: 22px; margin: 0 0 8px; }
+  #drop p { color: var(--muted); max-width: 620px; margin: 8px auto; }
+  .big { font-size: 15px; padding: 10px 18px !important; }
+  .spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin: 16px auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .tile .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .tile .v { font-size: 22px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td { white-space: nowrap; }
+  td.wrap { white-space: normal; min-width: 260px; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; white-space: nowrap; }
+  th.num, td.num { text-align: right; }
+  tbody tr:hover { background: var(--accent-soft); }
+  tr.click { cursor: pointer; }
+  .neg { color: var(--neg); }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
+  .warn { color: var(--warn); }
+  .bar { height: 8px; background: var(--accent); border-radius: 4px; min-width: 2px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+  .controls label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 3px; }
+  input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  button.btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .scroll { overflow: auto; max-height: 68vh; }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 10px; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .name { font-weight: 600; }
+  .detail-text { color: var(--muted); }
+  #detail { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); background: var(--panel); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); padding: 20px; overflow: auto; }
+  #detail h2 { margin-top: 0; font-size: 18px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .err { color: var(--neg); white-space: pre-wrap; }
+  @media (max-width: 640px) { main { padding: 12px; } nav { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>QBW Viewer</h1>
+  <span class="file" id="fileName"></span>
+  <nav id="tabs" class="hidden">
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="names">Vendors &amp; names</button>
+    <button data-tab="transactions">Transactions</button>
+    <button data-tab="lists">All data</button>
+    <button class="btn" id="openAnother">Open another file</button>
+  </nav>
+</header>
+
+<main>
+  <section id="loader">
+    <div id="drop">
+      <h2>Drop your QuickBooks file here</h2>
+      <p>Drag a <code>.qbw</code> company file anywhere onto this page, or choose it below.
+         It is read entirely inside your browser; nothing is uploaded and the file is not changed.</p>
+      <p><button class="btn primary big" id="chooseBtn">Choose .qbw file…</button></p>
+      <input type="file" id="picker" accept=".qbw,.QBW" class="hidden">
+      <div id="busy" class="hidden"><div class="spinner"></div><p id="busyMsg">Reading…</p></div>
+      <p id="loadMsg"></p>
+    </div>
+  </section>
+
+  <section id="overview" class="hidden">
+    <div class="tiles" id="tiles"></div>
+    <div class="panel">
+      <h3>By transaction type</h3>
+      <div class="scroll"><table id="byType"></table></div>
+    </div>
+    <div class="panel">
+      <h3>By year</h3>
+      <div class="scroll"><table id="byYear"></table></div>
+    </div>
+    <p class="muted">Decoded with <a href="https://github.com/Sigilweaver/OpenQBW">OpenQBW</a>, an open-source, reverse-engineered, read-only parser.
+      Amounts marked <span class="warn">*</span> include values OpenQBW cannot decode yet and are left out of totals, so totals can be lower than QuickBooks shows.</p>
+  </section>
+
+  <section id="names" class="hidden">
+    <div class="panel">
+      <div class="controls">
+        <label>List <select id="nTable"></select></label>
+        <label>Search <input type="search" id="nSearch" placeholder="Name, address, phone…" style="width:260px"></label>
+        <button class="btn primary" id="nCsv" style="margin-left:auto">Export CSV</button>
+      </div>
+      <div class="muted" id="nInfo"></div>
+      <div class="scroll"><table id="nGrid"></table></div>
+      <div class="pager"><button class="btn" id="nPrev">‹ Prev</button><span id="nPage"></span><button class="btn" id="nNext">Next ›</button></div>
+    </div>
+    <p class="muted">Names are recovered from the readable text stored in each record. OpenQBW does not label individual fields yet,
+      so the first text in a record is shown as the name and the rest (address, phone, email, notes…) as details.
+      If the list you need isn't picked automatically, choose another one above or search in <b>All data</b>.</p>
+  </section>
+
+  <section id="transactions" class="hidden">
+    <div class="panel">
+      <div class="controls">
+        <label>Type <select id="fType"><option value="">All types</option></select></label>
+        <label>From <input type="date" id="fFrom"></label>
+        <label>To <input type="date" id="fTo"></label>
+        <label>Search <input type="search" id="fText" placeholder="Name or ID…"></label>
+        <label>Min amount <input type="number" id="fMin" step="0.01" style="width:110px"></label>
+        <button class="btn" id="fReset">Reset</button>
+        <button class="btn primary" id="fCsv" style="margin-left:auto">Export CSV</button>
+      </div>
+      <div class="muted" id="txSummary"></div>
+      <div class="scroll"><table id="txTable"></table></div>
+      <div class="pager"><button class="btn" id="pPrev">‹ Prev</button><span id="pInfo"></span><button class="btn" id="pNext">Next ›</button></div>
+    </div>
+  </section>
+
+  <section id="lists" class="hidden">
+    <div class="panel">
+      <div class="controls">
+        <label>Search everything <input type="search" id="aSearch" placeholder="Type at least 2 characters…" style="width:320px"></label>
+        <label>Table <select id="aTable"><option value="">All tables</option></select></label>
+        <button class="btn primary" id="aCsv" style="margin-left:auto">Export CSV</button>
+      </div>
+      <div class="muted" id="aInfo"></div>
+      <div class="scroll"><table id="aGrid"></table></div>
+      <div class="pager"><button class="btn" id="aPrev">‹ Prev</button><span id="aPage"></span><button class="btn" id="aNext">Next ›</button></div>
+    </div>
+  </section>
+</main>
+
+<aside id="detail" class="hidden"></aside>
+
+<script id="worker-src" type="text/plain">
+// Runs the WebAssembly reader off the main thread so the page stays responsive.
+const WASM_B64 = "__WASM_BASE64__";
+self.onmessage = async (e) => {
+  try {
+    const bin = Uint8Array.from(atob(WASM_B64), (c) => c.charCodeAt(0));
+    const { instance } = await WebAssembly.instantiate(bin, {});
+    const x = instance.exports;
+    const bytes = new Uint8Array(e.data);
+    const ptr = x.alloc(bytes.length);
+    new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
+    x.analyze(ptr, bytes.length);
+    const out = new Uint8Array(x.memory.buffer, x.result_ptr(), x.result_len());
+    self.postMessage({ json: new TextDecoder().decode(out) });
+  } catch (err) {
+    self.postMessage({ error: String(err && err.message || err) });
+  }
+};
+</script>
+
+<script>
+"use strict";
+const PAGE = 200;
+// SA17 stores dates as days with SA-day 4017 == 1970-01-01 (OpenQBW src/date.rs).
+const SA_EPOCH = 4017;
+const ID_RE = /^[0-9A-Za-z]{16}$/;
+const $ = (id) => document.getElementById(id);
+let data = null, txRows = [], lineMap = new Map(), records = [], txSort = { key: "date", dir: -1 };
+const pages = { tx: 0, names: 0, all: 0 };
+
+const fmtMoney = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
+const fmtInt = new Intl.NumberFormat();
+function qbDate(raw) {
+  if (raw == null || raw < 1 || raw > 80000) return null;
+  return new Date((raw - SA_EPOCH) * 86400000).toISOString().slice(0, 10);
+}
+function money(c) { return c == null ? "" : `<span class="${c < 0 ? "neg" : ""}">${fmtMoney.format(c / 100)}</span>`; }
+function esc(v) { return String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function pretty(t) { return String(t || "").replace(/^abmc_/, "").replace(/_/g, " "); }
+function isId(s) { return ID_RE.test(s) && /\d/.test(s); }
+
+function downloadCsv(name, cols, rows) {
+  const cell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const text = [cols.map(cell).join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv" }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- loading ----------
+function decode(buffer) {
+  return new Promise((resolve, reject) => {
+    const src = $("worker-src").textContent;
+    const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+    let worker;
+    try { worker = new Worker(url); } catch (e) { reject(new Error("Your browser blocked the background reader: " + e.message)); return; }
+    worker.onmessage = (e) => { worker.terminate(); URL.revokeObjectURL(url); e.data.error ? reject(new Error(e.data.error)) : resolve(JSON.parse(e.data.json)); };
+    worker.onerror = (e) => { worker.terminate(); reject(new Error(e.message || "The reader crashed (the file may be too large for this browser).")); };
+    worker.postMessage(buffer, [buffer]);
+  });
+}
+
+async function openFile(file) {
+  if (!file) return;
+  $("loadMsg").textContent = "";
+  if (/\.(qbb|qbm|qbx|tlg|nd)$/i.test(file.name)) {
+    $("loadMsg").innerHTML = `<span class="err">${esc(file.name)} is a backup/support file. Please drop the company file ending in <code>.qbw</code>.</span>`;
+    return;
+  }
+  $("busy").classList.remove("hidden");
+  $("busyMsg").textContent = `Reading ${file.name} (${(file.size / 1048576).toFixed(1)} MB)… large files can take a minute.`;
+  try {
+    const result = await decode(await file.arrayBuffer());
+    if (result.error) throw new Error(result.error);
+    data = result;
+    $("fileName").textContent = file.name;
+    show();
+  } catch (e) {
+    $("loadMsg").innerHTML = `<span class="err">Could not read this file: ${esc(e.message)}\nOpenQBW supports QuickBooks Desktop 2018 and later; password-protected files cannot be opened.</span>`;
+  } finally {
+    $("busy").classList.add("hidden");
+  }
+}
+
+$("chooseBtn").onclick = () => $("picker").click();
+$("picker").onchange = (e) => openFile(e.target.files[0]);
+$("openAnother").onclick = () => { $("picker").value = ""; $("picker").click(); };
+document.addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("over"); });
+document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("over"); });
+document.addEventListener("drop", (e) => {
+  e.preventDefault(); document.body.classList.remove("over");
+  const f = e.dataTransfer.files[0];
+  if (f) { if (data) { $("loader").classList.remove("hidden"); hideTabs(); } openFile(f); }
+});
+
+function hideTabs() { for (const s of ["overview", "names", "transactions", "lists"]) $(s).classList.add("hidden"); }
+function selectTab(t) {
+  for (const b of $("tabs").querySelectorAll("[data-tab]")) b.classList.toggle("on", b.dataset.tab === t);
+  for (const s of ["overview", "names", "transactions", "lists"]) $(s).classList.toggle("hidden", s !== t);
+  $("detail").classList.add("hidden");
+}
+$("tabs").addEventListener("click", (e) => { if (e.target.dataset.tab) selectTab(e.target.dataset.tab); });
+
+// ---------- model ----------
+function buildModel() {
+  // Text records: one entry per row of every QuickBooks table.
+  records = [];
+  for (const [table, rows] of Object.entries(data.records || {})) {
+    for (const strings of rows) {
+      const ids = strings.filter(isId);
+      const text = strings.filter((s) => !isId(s));
+      records.push({ table, ids, text, name: text[0] || "", details: text.slice(1).join(" · "), search: strings.join(" ").toLowerCase() });
+    }
+  }
+  // Best-effort link from an ID to the list record that owns it (first ID in the row).
+  const owner = new Map();
+  for (const r of records) {
+    if (/_(header|lineitem|line)$/i.test(r.table) || !r.ids.length || !r.name) continue;
+    if (!owner.has(r.ids[0])) owner.set(r.ids[0], r);
+  }
+  const headerRows = new Map();
+  for (const r of records) if (/_header$/i.test(r.table) && r.ids.length) headerRows.set(r.ids[0], r);
+
+  lineMap = new Map();
+  for (const [parent, item, kind, cents, table] of data.lines || []) {
+    if (!lineMap.has(parent)) lineMap.set(parent, []);
+    lineMap.get(parent).push({ item, kind, cents, table, itemName: owner.get(item)?.name || "" });
+  }
+
+  txRows = (data.transactions || []).map((t) => {
+    const hr = headerRows.get(t.id);
+    let party = "", partyTable = "";
+    if (hr) {
+      for (const id of hr.ids.slice(1)) {
+        const o = owner.get(id);
+        if (o) { party = o.name; partyTable = o.table; break; }
+      }
+    }
+    return { ...t, date: qbDate(t.date_raw), party, partyTable, memo: hr ? hr.text.join(" · ") : "" };
+  });
+}
+
+function show() {
+  buildModel();
+  $("loader").classList.add("hidden");
+  $("tabs").classList.remove("hidden");
+  renderOverview();
+  initNames();
+  initTransactions();
+  initAll();
+  selectTab("overview");
+}
+
+// ---------- overview ----------
+function renderOverview() {
+  const dates = txRows.map((r) => r.date).filter(Boolean).sort();
+  const userTables = (data.tables || []).filter((t) => !t.system);
+  const tiles = [
+    ["Transactions", fmtInt.format(txRows.length)],
+    ["Line items", fmtInt.format((data.lines || []).length)],
+    ["Text records", fmtInt.format(records.length)],
+    ["QuickBooks tables", fmtInt.format(userTables.length)],
+    ["Date range", dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : "—"],
+    ["File size", `${(data.file_size / 1048576).toFixed(1)} MB`],
+  ];
+  $("tiles").innerHTML = tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v" style="${k === "Date range" ? "font-size:16px" : ""}">${v}</div></div>`).join("");
+
+  const agg = (keyFn) => {
+    const m = new Map();
+    for (const r of txRows) {
+      const k = keyFn(r), a = m.get(k) || { k, n: 0, cents: 0, lines: 0, deferred: false };
+      a.n++; a.cents += r.total; a.lines += r.lines; a.deferred ||= r.deferred; m.set(k, a);
+    }
+    return [...m.values()];
+  };
+  const byType = agg((r) => r.type).sort((a, b) => b.n - a.n);
+  const maxN = Math.max(1, ...byType.map((a) => a.n));
+  $("byType").innerHTML = `<thead><tr><th>Type</th><th class="num">Count</th><th style="width:30%"></th><th class="num">Line items</th><th class="num">Total</th></tr></thead><tbody>` +
+    (byType.map((a) => `<tr class="click" data-type="${esc(a.k)}"><td><span class="tag">${esc(pretty(a.k))}</span></td><td class="num">${fmtInt.format(a.n)}</td><td><div class="bar" style="width:${(a.n / maxN) * 100}%"></div></td><td class="num">${fmtInt.format(a.lines)}</td><td class="num">${money(a.cents)}${a.deferred ? ' <span class="warn">*</span>' : ""}</td></tr>`).join("") ||
+      `<tr><td colspan="5" class="muted">No transactions were decoded from this file.</td></tr>`) + "</tbody>";
+  $("byType").onclick = (e) => {
+    const tr = e.target.closest("tr[data-type]");
+    if (!tr) return;
+    $("fType").value = tr.dataset.type; selectTab("transactions"); renderTx(true);
+  };
+  const byYear = agg((r) => (r.date ? r.date.slice(0, 4) : "unknown")).sort((a, b) => String(b.k).localeCompare(String(a.k)));
+  $("byYear").innerHTML = `<thead><tr><th>Year</th><th class="num">Transactions</th><th class="num">Line items</th><th class="num">Total</th></tr></thead><tbody>` +
+    byYear.map((a) => `<tr><td>${esc(a.k)}</td><td class="num">${fmtInt.format(a.n)}</td><td class="num">${fmtInt.format(a.lines)}</td><td class="num">${money(a.cents)}</td></tr>`).join("") + "</tbody>";
+}
+
+// ---------- vendors & names ----------
+function listTables() {
+  const counts = new Map();
+  for (const r of records) if (r.name && !/_(header|lineitem|line)$/i.test(r.table)) counts.set(r.table, (counts.get(r.table) || 0) + 1);
+  return [...counts.entries()];
+}
+function initNames() {
+  const tables = listTables();
+  const rank = (t) => (/vend/i.test(t) ? 0 : /cust|employee|name|entity|other/i.test(t) ? 1 : /account|item/i.test(t) ? 2 : 3);
+  tables.sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1]);
+  $("nTable").innerHTML = tables.map(([t, n]) => `<option value="${esc(t)}">${esc(pretty(t))} (${fmtInt.format(n)})</option>`).join("") ||
+    `<option value="">No text records found</option>`;
+  $("nTable").onchange = $("nSearch").oninput = () => renderNames(true);
+  $("nPrev").onclick = () => { pages.names--; renderNames(); };
+  $("nNext").onclick = () => { pages.names++; renderNames(); };
+  $("nCsv").onclick = () => downloadCsv(`${pretty($("nTable").value) || "names"}.csv`, ["name", "details"], filteredNames());
+  renderNames(true);
+}
+function filteredNames() {
+  const t = $("nTable").value, q = $("nSearch").value.trim().toLowerCase();
+  const seen = new Set();
+  return records.filter((r) => {
+    if (r.table !== t || !r.name || (q && !r.search.includes(q))) return false;
+    const key = r.name + "|" + r.details;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+function renderNames(reset) {
+  if (reset) pages.names = 0;
+  const rows = filteredNames();
+  const n = Math.max(1, Math.ceil(rows.length / PAGE));
+  pages.names = Math.min(Math.max(0, pages.names), n - 1);
+  const t = $("nTable").value;
+  const txCount = new Map();
+  for (const r of txRows) if (r.party && r.partyTable === t) txCount.set(r.party, (txCount.get(r.party) || 0) + 1);
+  $("nInfo").textContent = `${fmtInt.format(rows.length)} records in ${pretty(t) || "—"}`;
+  $("nGrid").innerHTML = `<thead><tr><th>Name</th><th>Details</th>${txCount.size ? '<th class="num">Transactions</th>' : ""}</tr></thead><tbody>` +
+    (rows.slice(pages.names * PAGE, (pages.names + 1) * PAGE).map((r) =>
+      `<tr><td class="name">${esc(r.name)}</td><td class="wrap detail-text">${esc(r.details)}</td>${txCount.size ? `<td class="num">${txCount.get(r.name) ? `<a href="#" data-party="${esc(r.name)}">${txCount.get(r.name)}</a>` : ""}</td>` : ""}</tr>`).join("") ||
+      `<tr><td colspan="3" class="muted">No records.</td></tr>`) + "</tbody>";
+  $("nPage").textContent = `Page ${pages.names + 1} of ${n}`;
+  $("nPrev").disabled = pages.names === 0; $("nNext").disabled = pages.names >= n - 1;
+}
+$("nGrid").addEventListener("click", (e) => {
+  const a = e.target.closest("[data-party]");
+  if (!a) return;
+  e.preventDefault();
+  $("fReset").click(); $("fText").value = a.dataset.party; selectTab("transactions"); renderTx(true);
+});
+
+// ---------- transactions ----------
+const TX_COLS = [["date", "Date"], ["type", "Type"], ["party", "Name"], ["counter", "No.", true], ["lines", "Lines", true], ["total", "Total", true]];
+function initTransactions() {
+  const types = [...new Set(txRows.map((r) => r.type))].sort();
+  $("fType").innerHTML = `<option value="">All types</option>` + types.map((t) => `<option value="${esc(t)}">${esc(pretty(t))}</option>`).join("");
+  for (const id of ["fType", "fFrom", "fTo", "fText", "fMin"]) $(id).oninput = () => renderTx(true);
+  $("fReset").onclick = () => { for (const id of ["fType", "fFrom", "fTo", "fText", "fMin"]) $(id).value = ""; renderTx(true); };
+  $("pPrev").onclick = () => { pages.tx--; renderTx(); };
+  $("pNext").onclick = () => { pages.tx++; renderTx(); };
+  $("fCsv").onclick = () => downloadCsv("transactions.csv", ["date", "type", "party", "counter", "id", "lines", "amount", "memo"],
+    filteredTx().map((r) => ({ ...r, amount: (r.total / 100).toFixed(2) })));
+  renderTx(true);
+}
+function filteredTx() {
+  const type = $("fType").value, from = $("fFrom").value, to = $("fTo").value;
+  const q = $("fText").value.trim().toLowerCase();
+  const min = $("fMin").value === "" ? null : Math.round(parseFloat($("fMin").value) * 100);
+  const rows = txRows.filter((r) =>
+    (!type || r.type === type) && (!from || (r.date && r.date >= from)) && (!to || (r.date && r.date <= to)) &&
+    (!q || r.id.toLowerCase().includes(q) || r.party.toLowerCase().includes(q) || r.memo.toLowerCase().includes(q)) &&
+    (min == null || Math.abs(r.total) >= min));
+  const { key, dir } = txSort;
+  return rows.sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (x == null || x === "") return y == null || y === "" ? 0 : 1;
+    if (y == null || y === "") return -1;
+    return (x < y ? -1 : x > y ? 1 : 0) * dir;
+  });
+}
+function renderTx(reset) {
+  if (reset) pages.tx = 0;
+  const rows = filteredTx();
+  const n = Math.max(1, Math.ceil(rows.length / PAGE));
+  pages.tx = Math.min(Math.max(0, pages.tx), n - 1);
+  $("txSummary").innerHTML = `${fmtInt.format(rows.length)} transactions · total ${money(rows.reduce((s, r) => s + r.total, 0))}`;
+  const head = TX_COLS.map(([k, label, num]) => `<th data-k="${k}" class="${num ? "num" : ""}">${label}${txSort.key === k ? (txSort.dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("");
+  $("txTable").innerHTML = `<thead><tr>${head}</tr></thead><tbody>` +
+    (rows.slice(pages.tx * PAGE, (pages.tx + 1) * PAGE).map((r) =>
+      `<tr class="click" data-id="${esc(r.id)}"><td>${r.date || '<span class="muted">—</span>'}</td><td><span class="tag">${esc(pretty(r.type))}</span></td><td>${esc(r.party) || '<span class="muted">—</span>'}</td><td class="num">${r.counter ?? ""}</td><td class="num">${r.lines}</td><td class="num">${money(r.total)}${r.deferred ? ' <span class="warn" title="Includes amounts that could not be decoded">*</span>' : ""}</td></tr>`).join("") ||
+      `<tr><td colspan="6" class="muted">No matching transactions.</td></tr>`) + "</tbody>";
+  $("pInfo").textContent = `Page ${pages.tx + 1} of ${n}`;
+  $("pPrev").disabled = pages.tx === 0; $("pNext").disabled = pages.tx >= n - 1;
+}
+$("txTable").addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-k]");
+  if (th) { const k = th.dataset.k; txSort = { key: k, dir: txSort.key === k ? -txSort.dir : (k === "date" || k === "total" ? -1 : 1) }; renderTx(); return; }
+  const tr = e.target.closest("tr[data-id]");
+  if (tr) showDetail(tr.dataset.id);
+});
+function showDetail(id) {
+  const t = txRows.find((r) => r.id === id);
+  const lines = lineMap.get(id) || [];
+  const kind = { 0: "none", 1: "amount", 2: "amount", 3: "not decoded" };
+  $("detail").innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2>${esc(pretty(t.type))}${t.party ? " · " + esc(t.party) : ""}</h2><button class="btn" id="dClose">Close</button></div>
+    <dl>
+      <dt>Date</dt><dd>${t.date || "—"}</dd>
+      <dt>Number</dt><dd>${t.counter ?? "—"}</dd>
+      <dt>Name</dt><dd>${esc(t.party) || "—"}</dd>
+      <dt>Total</dt><dd>${money(t.total)}${t.deferred ? ' <span class="warn">* some lines not decoded</span>' : ""}</dd>
+      <dt>Text in record</dt><dd class="detail-text">${esc(t.memo) || "—"}</dd>
+      <dt>QuickBooks ID</dt><dd><code>${esc(t.id)}</code></dd>
+    </dl>
+    <h3>Line items (${lines.length})</h3>
+    ${lines.length ? `<table><thead><tr><th>#</th><th>Item</th><th class="num">Amount</th></tr></thead><tbody>` +
+      lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.itemName) || `<code class="muted">${esc(l.item || "")}</code>`}</td><td class="num ${l.kind === 3 ? "warn" : ""}">${l.kind === 3 ? kind[3] : money(l.cents)}</td></tr>`).join("") + "</tbody></table>"
+      : `<p class="muted">No line items were decoded for this transaction.</p>`}`;
+  $("detail").classList.remove("hidden");
+  $("dClose").onclick = () => $("detail").classList.add("hidden");
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("detail").classList.add("hidden"); });
+
+// ---------- all data ----------
+function initAll() {
+  const tables = [...new Set(records.map((r) => r.table))].sort();
+  $("aTable").innerHTML = `<option value="">All tables</option>` + tables.map((t) => `<option value="${esc(t)}">${esc(pretty(t))}</option>`).join("");
+  $("aSearch").oninput = $("aTable").onchange = () => renderAll(true);
+  $("aPrev").onclick = () => { pages.all--; renderAll(); };
+  $("aNext").onclick = () => { pages.all++; renderAll(); };
+  $("aCsv").onclick = () => downloadCsv("records.csv", ["table", "text", "ids"], filteredAll().map((r) => ({ table: r.table, text: r.text.join(" | "), ids: r.ids.join(" ") })));
+  renderAll(true);
+}
+function filteredAll() {
+  const q = $("aSearch").value.trim().toLowerCase(), t = $("aTable").value;
+  if (!t && q.length < 2) return [];
+  return records.filter((r) => (!t || r.table === t) && (q.length < 2 || r.search.includes(q)));
+}
+function renderAll(reset) {
+  if (reset) pages.all = 0;
+  const rows = filteredAll();
+  const n = Math.max(1, Math.ceil(rows.length / PAGE));
+  pages.all = Math.min(Math.max(0, pages.all), n - 1);
+  $("aInfo").textContent = rows.length ? `${fmtInt.format(rows.length)} matching records` : "Type a search or pick a table.";
+  $("aGrid").innerHTML = rows.length ? `<thead><tr><th>Table</th><th>Text</th></tr></thead><tbody>` +
+    rows.slice(pages.all * PAGE, (pages.all + 1) * PAGE).map((r) => `<tr><td><span class="tag">${esc(pretty(r.table))}</span></td><td class="wrap">${r.text.map(esc).join(' <span class="muted">·</span> ') || `<span class="muted">${esc(r.ids.join(" "))}</span>`}</td></tr>`).join("") + "</tbody>" : "";
+  $("aPage").textContent = `Page ${pages.all + 1} of ${n}`;
+  $("aPrev").disabled = pages.all === 0; $("aNext").disabled = pages.all >= n - 1;
+}
+</script>
+</body>
+</html>
