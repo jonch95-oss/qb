@@ -36,9 +36,12 @@ Everything is compiled to WebAssembly and embedded in the HTML page.
 
 ## Limitations
 
-- Amounts are read exactly as stored (SQL Anywhere decimal: digit count, sign/exponent byte, base-100 digits with
-  trailing zero pairs dropped, e.g. $7,000 = `01 41 46`, $8,695 = `02 40 56 5f`). This was confirmed on three company
-  files, but some transactions are only partly readable.
+- Amounts use SQL Anywhere's decimal (digit count, sign/exponent byte, base-100 pairs). Small values read as an
+  integer whose last pair sits at 100^exponent (e.g. $98.04 = `02 3f 62 04`); larger multi-pair values put their first
+  pair at the exponent's place (an $8,000 estimate = `02 41 50 01`, matching that job's `01 41 50` invoices). This was
+  fitted against invoices, payments and checks in four company files, not taken from documentation.
+- Home's yearly figures keep invoices, money received and spending in separate columns (they describe the same money
+  at different stages), ignore estimates, and use each transaction's own total rather than summing its item lines.
 - QuickBooks keeps old copies of edited or reprinted checks, so a check can appear more than once.
 - Often only some of a transaction's lines are decoded (e.g. the expense side, not the bank side).
 - Transaction types are inferred; a few hundred show as "Other".

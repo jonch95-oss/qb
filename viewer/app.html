@@ -157,7 +157,7 @@
         <div class="warnbox">Read-only copy decoded from the company file. Amounts are read exactly as recorded, but some transactions are only partly readable (for example, no amount or only one side), and QuickBooks keeps old copies of edited checks, so a check can appear more than once.</div>
         <div class="tiles" id="tiles"></div>
         <div class="grid2">
-          <div class="panel pad"><h3>Money in and out by year</h3><div class="tablewrap"><table id="byYear"></table></div></div>
+          <div class="panel pad"><h3>By year</h3><div class="tablewrap"><table id="byYear"></table></div></div>
           <div class="panel pad"><h3>Top vendors by amount</h3><div class="tablewrap"><table id="topVendors"></table></div></div>
           <div class="panel pad"><h3>Transactions by type</h3><div class="tablewrap"><table id="byType"></table></div></div>
           <div class="panel pad"><h3>Most recent transactions</h3><div class="tablewrap"><table id="recent"></table></div></div>
@@ -412,16 +412,19 @@ function build() {
     // splits) and the check or reference number.
     const m = t.m || [null, null, null];
     const main = { a: m[0] && (acctUses.get(m[0]) || 0) >= 3 && goodName(m[0]) ? m[0] : "", v: m[1], ref: m[2] || "" };
-    const amount = main.v != null && Math.abs(main.v) < 1e6 ? -main.v : vals.length ? vals.reduce((s, v) => s + v, 0) : null;
+    // Use the transaction's own total (line 0). Item lines can hold rates and
+    // quantities, so they are only used when there is a single one.
+    let amount = main.v != null ? -main.v : vals.length === 1 ? vals[0] : null;
+    if (amount != null && Math.abs(amount) >= 5e6) amount = null; // not a plausible single transaction
     const x = { i, t: t.t, d: t.d, date: iso(t.d), c: t.c, name: first ? first[1] : "", kind: first ? first[0] : null,
       others: [...new Set(t.n.map((n) => n[1]))], l: t.l, lines, main, num: main.ref,
       amount: amount == null ? null : Math.round(amount * 100) / 100 };
-    x.type = txnType(x);
+    x.type = [main.a, ...lines.map((l) => l.a)].some((a) => /^Estimates?$/i.test(a)) ? "Estimate" : txnType(x);
     // The stored signs differ between the bank side and the splits, so show
     // money out as negative and money in as positive by type.
     if (x.amount != null) {
       if (/^(Check|Credit Card Charge)$/.test(x.type)) x.amount = -Math.abs(x.amount);
-      else if (/^(Deposit|Payment|Invoice|Sales)$/.test(x.type)) x.amount = Math.abs(x.amount);
+      else if (/^(Deposit|Payment|Invoice|Sales|Estimate)$/.test(x.type)) x.amount = Math.abs(x.amount);
     }
     x.accts = [...new Set(lines.map((l) => l.a).filter(Boolean))];
     return x;
@@ -475,16 +478,21 @@ function renderHome() {
     ["Dates", dates.length ? `${fmtDate.format(dayToDate(Math.min(...dates)))} – ${fmtDate.format(dayToDate(Math.max(...dates)))}` : "—"],
   ].map(([k, v]) => `<div class="panel tile"><div class="k">${k}</div><div class="v" style="${k === "Dates" ? "font-size:15px" : ""}">${v}</div></div>`).join("");
 
+  // Invoices, the payments received for them and the deposits of those
+  // payments are the same money, so they get separate columns, never a sum.
   const years = new Map();
   for (const t of txns) {
-    if (t.amount == null) continue;
-    const y = t.date.slice(0, 4), r = years.get(y) || { y, inn: 0, out: 0, n: 0 };
-    r.n++; if (t.amount < 0) r.out += t.amount; else r.inn += t.amount;
+    if (t.amount == null || t.type === "Estimate") continue;
+    const y = t.date.slice(0, 4), r = years.get(y) || { y, sales: 0, recv: 0, spent: 0, n: 0 };
+    r.n++;
+    if (t.type === "Invoice" || t.type === "Sales") r.sales += t.amount;
+    else if (t.type === "Payment" || t.type === "Deposit") r.recv += t.amount;
+    else if (t.type === "Check" || t.type === "Credit Card Charge") r.spent += t.amount;
     years.set(y, r);
   }
   const ys = [...years.values()].sort((a, b) => b.y.localeCompare(a.y));
-  $("byYear").innerHTML = `<thead><tr><th>Year</th><th class="num">Transactions</th><th class="num">Money in</th><th class="num">Money out</th></tr></thead><tbody>` +
-    ys.map((r) => `<tr class="click" data-year="${r.y}"><td>${r.y}</td><td class="num">${fmtInt.format(r.n)}</td><td class="num">${money(r.inn)}</td><td class="num">${money(r.out)}</td></tr>`).join("") + "</tbody>";
+  $("byYear").innerHTML = `<thead><tr><th>Year</th><th class="num">Invoiced &amp; sales</th><th class="num">Received &amp; deposited</th><th class="num">Spent</th></tr></thead><tbody>` +
+    ys.map((r) => `<tr class="click" data-year="${r.y}"><td>${r.y}</td><td class="num">${money(r.sales)}</td><td class="num">${money(r.recv)}</td><td class="num">${money(r.spent)}</td></tr>`).join("") + "</tbody>";
   $("byYear").onclick = (e) => { const tr = e.target.closest("tr[data-year]"); if (tr) go("journal", { year: tr.dataset.year }); };
 
   const vend = [...names.values()].filter((r) => r.kinds.has("vendors") && r.txns.length).sort((a, b) => Math.abs(b.total) - Math.abs(a.total)).slice(0, 12);

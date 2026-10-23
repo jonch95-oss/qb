@@ -407,8 +407,15 @@ fn sa_decimal(b: &[u8]) -> Option<f64> {
     if digits.iter().any(|&d| d > 99) {
         return None;
     }
-    let n = digits.iter().fold(0f64, |n, &d| n * 100.0 + d as f64);
-    let v = n * 100f64.powi((exp & 0x7f) as i32 - 0x40);
+    // Place of the first pair. Reading the pairs as an integer whose last pair
+    // is at 100^e fits small amounts ($98.04 = `02 3f 62 04`, $8,695 =
+    // `02 40 56 5f`), but larger multi-pair values (an $8,000 estimate stored
+    // as `02 41 50 01`, matching that job's `01 41 50` invoices and payments)
+    // put the first pair at 100^e. Both hold if the first pair sits at the
+    // hundreds place unless the exponent puts it higher.
+    let e = (exp & 0x7f) as i32 - 0x40;
+    let top = (e + count as i32 - 1).min(e.max(1));
+    let v: f64 = digits.iter().enumerate().map(|(k, &d)| d as f64 * 100f64.powi(top - k as i32)).sum();
     let v = (v * 10_000.0).round() / 10_000.0;
     Some(if exp & 0x80 != 0 { -v } else { v })
 }
@@ -750,6 +757,12 @@ mod tests {
         assert_eq!(sa_decimal(&[0x01, 0xc0, 0x3c]), Some(-60.0));
         assert_eq!(sa_decimal(&[0x01, 0x41, 0x08]), Some(800.0));
         assert_eq!(sa_decimal(&[0x02, 0xbf, 0x03, 0x35]), Some(-3.53));
+        assert_eq!(sa_decimal(&[0x01, 0x41, 0x50]), Some(8_000.0));
+        assert_eq!(sa_decimal(&[0x02, 0xc1, 0x50, 0x01]), Some(-8_001.0));
+        assert_eq!(sa_decimal(&[0x02, 0x40, 0x56, 0x5f]), Some(8_695.0));
+        assert_eq!(sa_decimal(&[0x01, 0x42, 0x0f]), Some(150_000.0));
+        assert_eq!(sa_decimal(&[0x03, 0x3f, 0x32, 0x61, 0x06]), Some(5_097.06));
+        assert_eq!(sa_decimal(&[0x03, 0xc0, 0x32, 0x5b, 0x01]), Some(-5_091.01));
         assert_eq!(sa_decimal(&[0x02, 0x3f, 0x99, 0x01]), None);
     }
 
